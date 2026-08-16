@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// leaveRoom — an explicit, voluntary departure (as opposed to disconnect.ts,
+// leaveVillage — an explicit, voluntary departure (as opposed to disconnect.ts,
 // which handles an involuntary drop and never removes the player). Only
 // valid in the LOBBY: once a game has started, a player who wants to stop
 // participating simply disconnects/backgrounds — see the module header in
@@ -10,23 +10,23 @@
 // `transferHostIfNeeded` for the exact rule.
 // ---------------------------------------------------------------------------
 
-import { LeaveRoomPayloadSchema } from '@mafia/shared';
-import { roomsRepository } from '../../db';
-import { gameRoom, broadcastStateToRoom, type GameServer, type GameSocket } from '../emit';
+import { LeaveVillagePayloadSchema } from '@mafia/shared';
+import { villagesRepository } from '../../db';
+import { gameVillage, broadcastStateToVillage, type GameServer, type GameSocket } from '../emit';
 import { ackError, ackOk, parseOrAck, requireGameSession, type HandlerAck } from '../handlerContext';
 import { transferHostIfNeeded } from '../lobbyManagement';
-import { roomManager } from '../RoomManager';
+import { villageManager } from '../VillageManager';
 
-export function registerLeaveRoomHandler(io: GameServer, socket: GameSocket): void {
-  socket.on('leaveRoom', async (payload, ack?: HandlerAck) => {
-    const parsed = parseOrAck(LeaveRoomPayloadSchema, payload, ack);
+export function registerLeaveVillageHandler(io: GameServer, socket: GameSocket): void {
+  socket.on('leaveVillage', async (payload, ack?: HandlerAck) => {
+    const parsed = parseOrAck(LeaveVillagePayloadSchema, payload, ack);
     if (!parsed) return;
 
-    const session = requireGameSession(parsed.roomCode, ack);
+    const session = requireGameSession(parsed.villageCode, ack);
     if (!session) return;
 
     if (session.state.phase !== 'LOBBY') {
-      ackError(ack, { code: 'INVALID_PHASE', message: 'Cannot leave a room once a game is in progress — disconnect instead.' });
+      ackError(ack, { code: 'INVALID_PHASE', message: 'Cannot leave a village once a game is in progress — disconnect instead.' });
       return;
     }
 
@@ -43,19 +43,19 @@ export function registerLeaveRoomHandler(io: GameServer, socket: GameSocket): vo
     };
     session.sockets.delete(player._id);
 
-    await roomsRepository.removePlayerFromRoom(parsed.roomCode, player._id);
-    await socket.leave(gameRoom(parsed.roomCode));
+    await villagesRepository.removePlayerFromVillage(parsed.villageCode, player._id);
+    await socket.leave(gameVillage(parsed.villageCode));
 
-    io.to(gameRoom(parsed.roomCode)).emit('playerLeft', { playerId: player._id, playerName: player.displayName, reason: 'LEFT' });
+    io.to(gameVillage(parsed.villageCode)).emit('playerLeft', { playerId: player._id, playerName: player.displayName, reason: 'LEFT' });
 
     if (session.state.players.length === 0) {
-      roomManager.delete(parsed.roomCode);
+      villageManager.delete(parsed.villageCode);
     } else {
       const newHost = session.state.players.find((p) => p.isHost);
       if (newHost) {
-        await roomsRepository.setHost(parsed.roomCode, newHost.id);
+        await villagesRepository.setHost(parsed.villageCode, newHost.id);
       }
-      broadcastStateToRoom(io, session.state);
+      broadcastStateToVillage(io, session.state);
     }
 
     ackOk(ack);

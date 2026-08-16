@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { randomUUID } from 'node:crypto';
-import type { FullGameState, GameEndReason, Phase, PublicPlayer, Role, RoomCode } from '@mafia/shared';
+import type { FullGameState, GameEndReason, Phase, PublicPlayer, Role, VillageCode } from '@mafia/shared';
 import { getDb } from '../connection';
 import { COLLECTIONS } from '../collections';
 import type { GameDocument } from '../types';
@@ -30,7 +30,7 @@ export async function createGame(state: FullGameState): Promise<GameDocument> {
   const now = new Date();
   const doc: GameDocument = {
     _id: randomUUID(),
-    roomCode: state.roomCode,
+    villageCode: state.villageCode,
     hostId,
     status: 'IN_PROGRESS',
     currentPhase: state.phase,
@@ -108,11 +108,11 @@ export async function findGameById(gameId: string): Promise<GameDocument | null>
   return col.findOne({ _id: gameId });
 }
 
-/** Game history for a room, most recent first — used for a post-game /
+/** Game history for a village, most recent first — used for a post-game /
  * rematch-history screen, not gameplay itself. */
-export async function findGamesByRoom(roomCode: RoomCode, limit = 20): Promise<GameDocument[]> {
+export async function findGamesByVillage(villageCode: VillageCode, limit = 20): Promise<GameDocument[]> {
   const col = await collection();
-  return col.find({ roomCode }).sort({ startedAt: -1 }).limit(limit).toArray();
+  return col.find({ villageCode }).sort({ startedAt: -1 }).limit(limit).toArray();
 }
 
 /** Every game still marked IN_PROGRESS — the exact set a server needs to

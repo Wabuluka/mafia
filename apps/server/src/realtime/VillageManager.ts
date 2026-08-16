@@ -1,27 +1,27 @@
 // ---------------------------------------------------------------------------
-// RoomManager — the in-memory registry of active games, keyed by room code.
-// This is the "source of truth during play" the hot-path boundary comment
-// in db/index.ts refers to: everything in here is a plain object living in
-// process memory, mutated synchronously by the socket handlers, and
-// checkpointed to MongoDB only at phase boundaries and game end.
+// VillageManager — the in-memory registry of active games, keyed by village
+// code. This is the "source of truth during play" the hot-path boundary
+// comment in db/index.ts refers to: everything in here is a plain object
+// living in process memory, mutated synchronously by the socket handlers,
+// and checkpointed to MongoDB only at phase boundaries and game end.
 //
-// One process holds one RoomManager. If this server is ever horizontally
-// scaled, room-to-instance affinity (sticky sessions, or moving room state
-// to a shared store) becomes required — out of scope here, called out
+// One process holds one VillageManager. If this server is ever horizontally
+// scaled, village-to-instance affinity (sticky sessions, or moving village
+// state to a shared store) becomes required — out of scope here, called out
 // explicitly rather than silently assumed away.
 // ---------------------------------------------------------------------------
 
-import type { ConfigurablePhaseDurationKey, FullGameState, PlayerId, RoomCode } from '@mafia/shared';
+import type { ConfigurablePhaseDurationKey, FullGameState, PlayerId, VillageCode } from '@mafia/shared';
 import type { GameEventDocument } from '../db/types';
 import { clearDeadline, type ScheduledDeadline } from './scheduler';
 
 type NewEvent = Omit<GameEventDocument, '_id' | 'sequence' | 'createdAt'>;
 
-/** Everything the realtime layer tracks for one active room, beyond the
+/** Everything the realtime layer tracks for one active village, beyond the
  * pure FullGameState the engine operates on. */
 export interface GameSession {
-  roomCode: RoomCode;
-  /** Absent while the room is still in LOBBY (no game document exists yet). */
+  villageCode: VillageCode;
+  /** Absent while the village is still in LOBBY (no game document exists yet). */
   gameId?: string;
   state: FullGameState;
   /** The current phase's scheduled auto-advance deadline. Cleared and
@@ -31,7 +31,7 @@ export interface GameSession {
    * facing `PhaseTimer` type) is always kept in sync with this — this
    * field is the server-only handle needed to actually cancel it. */
   deadline?: ScheduledDeadline;
-  /** Every socket currently attached to this room, keyed by playerId. A
+  /** Every socket currently attached to this village, keyed by playerId. A
    * player can have at most one active socket — a reconnect replaces the
    * previous entry rather than adding a second (see socketAuth.ts). */
   sockets: Map<PlayerId, string>; // playerId -> socket.id
@@ -49,7 +49,7 @@ export interface GameSession {
    * see persistence.ts and the hot-path boundary comment in db/index.ts. */
   pendingEvents: NewEvent[];
   /** Host-configured overrides for timed phase durations, set via the
-   * `updateRoomSettings` event (see handlers/updateRoomSettings.ts).
+   * `updateVillageSettings` event (see handlers/updateVillageSettings.ts).
    * Absent keys fall back to DEFAULT_PHASE_DURATIONS_MS — see
    * phaseLoop.ts's `durationFor`. Lobby-only to change; once a game
    * starts, whatever was configured is locked in for the rest of that
@@ -59,32 +59,32 @@ export interface GameSession {
   phaseDurationOverridesMs: Partial<Record<ConfigurablePhaseDurationKey, number>>;
 }
 
-export class RoomManager {
-  private readonly sessions = new Map<RoomCode, GameSession>();
+export class VillageManager {
+  private readonly sessions = new Map<VillageCode, GameSession>();
 
-  get(roomCode: RoomCode): GameSession | undefined {
-    return this.sessions.get(roomCode);
+  get(villageCode: VillageCode): GameSession | undefined {
+    return this.sessions.get(villageCode);
   }
 
-  has(roomCode: RoomCode): boolean {
-    return this.sessions.has(roomCode);
+  has(villageCode: VillageCode): boolean {
+    return this.sessions.has(villageCode);
   }
 
   create(session: GameSession): void {
-    this.sessions.set(session.roomCode, session);
+    this.sessions.set(session.villageCode, session);
   }
 
   /** Removes a session and cancels its pending deadline, if any — the one
    * place a GameSession's timer is guaranteed to be cleaned up no matter
-   * why the room is going away (abandonment, every player leaving the
+   * why the village is going away (abandonment, every player leaving the
    * lobby, an explicit close). See scheduler.ts's module header for why a
    * leaked timer here would matter: it would keep firing `advancePhase`
    * against a session no longer in this map, doing real work (DB writes,
-   * broadcasts) for a room nobody can reach anymore. */
-  delete(roomCode: RoomCode): void {
-    const session = this.sessions.get(roomCode);
+   * broadcasts) for a village nobody can reach anymore. */
+  delete(villageCode: VillageCode): void {
+    const session = this.sessions.get(villageCode);
     clearDeadline(session?.deadline);
-    this.sessions.delete(roomCode);
+    this.sessions.delete(villageCode);
   }
 
   /** Replaces a session's state in place. Kept as a single method (rather
@@ -92,8 +92,8 @@ export class RoomManager {
    * transition funnels through one obvious point, useful for future
    * instrumentation (metrics, structured logging) without hunting down
    * every assignment site. */
-  setState(roomCode: RoomCode, state: FullGameState): void {
-    const session = this.sessions.get(roomCode);
+  setState(villageCode: VillageCode, state: FullGameState): void {
+    const session = this.sessions.get(villageCode);
     if (!session) return;
     session.state = state;
   }
@@ -103,6 +103,6 @@ export class RoomManager {
   }
 }
 
-/** Process-wide singleton — one RoomManager per server instance, matching
- * the module header's "one process holds one RoomManager" contract. */
-export const roomManager = new RoomManager();
+/** Process-wide singleton — one VillageManager per server instance, matching
+ * the module header's "one process holds one VillageManager" contract. */
+export const villageManager = new VillageManager();

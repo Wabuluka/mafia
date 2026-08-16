@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
-// Rate limiting. Room creation is the primary abuse vector (an attacker
-// scripting POST /api/rooms to exhaust the code keyspace, spam the DB, or
+// Rate limiting. Village creation is the primary abuse vector (an attacker
+// scripting POST /api/villages to exhaust the code keyspace, spam the DB, or
 // grief other players), so it gets its own, stricter limiter layered on top
 // of a general per-IP limiter applied to the whole API.
 //
-// Two independent dimensions are limited, both active on room creation:
+// Two independent dimensions are limited, both active on village creation:
 //   - per IP: catches a single attacker regardless of how many sessions
 //     they mint.
 //   - per session: catches an attacker who rotates IPs (or sits behind a
@@ -45,20 +45,20 @@ export const apiRateLimiter = rateLimit({
   limit: 60,
 });
 
-/** Stricter per-IP limiter specifically for room creation. */
-export const createRoomIpRateLimiter = rateLimit({
+/** Stricter per-IP limiter specifically for village creation. */
+export const createVillageIpRateLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 10 * 60 * 1000,
   limit: 10,
 });
 
-/** Per-session limiter for room creation — keyed on the session cookie's
+/** Per-session limiter for village creation — keyed on the session cookie's
  * player id rather than IP, so it still bites an attacker with many IPs
  * but one (or a small rotating set of) session token(s). Requests with no
  * resolved session are keyed under a single shared bucket; that bucket is
- * intentionally tight since a legitimate room-creation flow always POSTs
+ * intentionally tight since a legitimate village-creation flow always POSTs
  * /api/session first and will have a `req.player` by this point. */
-export const createRoomSessionRateLimiter = rateLimit({
+export const createVillageSessionRateLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 10 * 60 * 1000,
   limit: 5,

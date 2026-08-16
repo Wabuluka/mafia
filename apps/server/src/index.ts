@@ -38,7 +38,7 @@ async function main() {
   await ensureCollections(db);
 
   // Recover from a prior crash BEFORE accepting any traffic: resume every
-  // still-IN_GAME room's game where possible, abandon the rest. See
+  // still-IN_GAME village's game where possible, abandon the rest. See
   // realtime/restart.ts for the resume-vs-abandon rule.
   await recoverInProgressGames(io);
 

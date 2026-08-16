@@ -16,7 +16,7 @@ import { apiRateLimiter } from './middleware/rateLimit';
 import { requestId, requestLogger } from './middleware/requestId';
 import { attachSession } from './middleware/session';
 import { gamesRouter } from './routes/games.routes';
-import { roomsRouter } from './routes/rooms.routes';
+import { villagesRouter } from './routes/villages.routes';
 import { sessionRouter } from './routes/session.routes';
 
 export function createApp(): Express {
@@ -45,12 +45,12 @@ export function createApp(): Express {
   // routes opt into `requireSession` when they need one.
   app.use(attachSession);
 
-  // General per-IP budget for the whole API surface. Room creation layers
-  // its own stricter limiters on top of this (see rooms.routes.ts).
+  // General per-IP budget for the whole API surface. Village creation layers
+  // its own stricter limiters on top of this (see villages.routes.ts).
   app.use('/api', apiRateLimiter);
 
   app.use('/api', sessionRouter);
-  app.use('/api', roomsRouter);
+  app.use('/api', villagesRouter);
   app.use('/api', gamesRouter);
 
   app.get('/health', (_req, res) => {

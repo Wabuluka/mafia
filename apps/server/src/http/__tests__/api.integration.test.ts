@@ -34,7 +34,7 @@ describeIfMongo('HTTP API integration', () => {
     const db = await import('../../db');
     const mongoDb = await db.getDb();
     await Promise.all([
-      mongoDb.collection('rooms').deleteMany({}),
+      mongoDb.collection('villages').deleteMany({}),
       mongoDb.collection('games').deleteMany({}),
       mongoDb.collection('players').deleteMany({}),
       mongoDb.collection('gameEvents').deleteMany({}),
@@ -96,16 +96,16 @@ describeIfMongo('HTTP API integration', () => {
     return { cookie: extractCookie(res), playerId: res.body.playerId };
   }
 
-  describe('POST /api/rooms', () => {
-    it('rejects room creation without a session', async () => {
-      const res = await request(app).post('/api/rooms').send({});
+  describe('POST /api/villages', () => {
+    it('rejects village creation without a session', async () => {
+      const res = await request(app).post('/api/villages').send({});
       expect(res.status).toBe(401);
       expect(res.body.error.code).toBe('UNAUTHENTICATED');
     });
 
-    it('creates a room with a 4-character code avoiding ambiguous characters', async () => {
+    it('creates a village with a 4-character code avoiding ambiguous characters', async () => {
       const { cookie } = await createSession();
-      const res = await request(app).post('/api/rooms').set('Cookie', cookie).send({});
+      const res = await request(app).post('/api/villages').set('Cookie', cookie).send({});
 
       expect(res.status).toBe(201);
       expect(res.body.code).toMatch(/^[A-HJ-NP-Z2-9]{4}$/); // excludes O, I, 0, 1
@@ -116,26 +116,26 @@ describeIfMongo('HTTP API integration', () => {
     it('rejects minPlayers greater than maxPlayers', async () => {
       const { cookie } = await createSession();
       const res = await request(app)
-        .post('/api/rooms')
+        .post('/api/villages')
         .set('Cookie', cookie)
         .send({ minPlayers: 10, maxPlayers: 5 });
       expect(res.status).toBe(400);
     });
   });
 
-  describe('GET /api/rooms/:code', () => {
+  describe('GET /api/villages/:code', () => {
     it('returns 404 for an unknown code', async () => {
-      const res = await request(app).get('/api/rooms/ABCD');
+      const res = await request(app).get('/api/villages/ABCD');
       expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.error.code).toBe('VILLAGE_NOT_FOUND');
     });
 
     it('returns only lobby metadata — no game/round/phase/role fields', async () => {
       const { cookie } = await createSession();
-      const created = await request(app).post('/api/rooms').set('Cookie', cookie).send({});
+      const created = await request(app).post('/api/villages').set('Cookie', cookie).send({});
       const code = created.body.code as string;
 
-      const res = await request(app).get(`/api/rooms/${code}`);
+      const res = await request(app).get(`/api/villages/${code}`);
       expect(res.status).toBe(200);
       expect(Object.keys(res.body).sort()).toEqual(
         ['code', 'status', 'playerCount', 'maxPlayers', 'minPlayers'].sort(),
@@ -145,49 +145,49 @@ describeIfMongo('HTTP API integration', () => {
       expect(res.body).not.toHaveProperty('roundNumber');
     });
 
-    it('rejects a malformed room code', async () => {
-      const res = await request(app).get('/api/rooms/toolong');
+    it('rejects a malformed village code', async () => {
+      const res = await request(app).get('/api/villages/toolong');
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
   });
 
-  describe('POST /api/rooms/:code/join', () => {
+  describe('POST /api/villages/:code/join', () => {
     it('rejects joining without a session', async () => {
       const { cookie } = await createSession('Host');
-      const created = await request(app).post('/api/rooms').set('Cookie', cookie).send({});
+      const created = await request(app).post('/api/villages').set('Cookie', cookie).send({});
       const code = created.body.code as string;
 
-      const res = await request(app).post(`/api/rooms/${code}/join`).send({});
+      const res = await request(app).post(`/api/villages/${code}/join`).send({});
       expect(res.status).toBe(401);
     });
 
     it('adds a new player and increments playerCount', async () => {
       const host = await createSession('Host');
-      const created = await request(app).post('/api/rooms').set('Cookie', host.cookie).send({});
+      const created = await request(app).post('/api/villages').set('Cookie', host.cookie).send({});
       const code = created.body.code as string;
 
       const guest = await createSession('Guest');
-      const res = await request(app).post(`/api/rooms/${code}/join`).set('Cookie', guest.cookie).send({});
+      const res = await request(app).post(`/api/villages/${code}/join`).set('Cookie', guest.cookie).send({});
 
       expect(res.status).toBe(200);
       expect(res.body.playerCount).toBe(2);
     });
 
-    it('is idempotent for a player already in the room', async () => {
+    it('is idempotent for a player already in the village', async () => {
       const host = await createSession('Host');
-      const created = await request(app).post('/api/rooms').set('Cookie', host.cookie).send({});
+      const created = await request(app).post('/api/villages').set('Cookie', host.cookie).send({});
       const code = created.body.code as string;
 
-      const res = await request(app).post(`/api/rooms/${code}/join`).set('Cookie', host.cookie).send({});
+      const res = await request(app).post(`/api/villages/${code}/join`).set('Cookie', host.cookie).send({});
       expect(res.status).toBe(200);
       expect(res.body.playerCount).toBe(1);
     });
 
-    it('rejects joining a full room', async () => {
+    it('rejects joining a full village', async () => {
       const host = await createSession('Host');
       const created = await request(app)
-        .post('/api/rooms')
+        .post('/api/villages')
         .set('Cookie', host.cookie)
         .send({ minPlayers: 5, maxPlayers: 5 });
       const code = created.body.code as string;
@@ -195,19 +195,19 @@ describeIfMongo('HTTP API integration', () => {
       // host already fills 1 of 5; add 4 more distinct sessions
       for (let i = 0; i < 4; i += 1) {
         const guest = await createSession(`Guest${i}`);
-        const joinRes = await request(app).post(`/api/rooms/${code}/join`).set('Cookie', guest.cookie).send({});
+        const joinRes = await request(app).post(`/api/villages/${code}/join`).set('Cookie', guest.cookie).send({});
         expect(joinRes.status).toBe(200);
       }
 
       const overflow = await createSession('Overflow');
-      const res = await request(app).post(`/api/rooms/${code}/join`).set('Cookie', overflow.cookie).send({});
+      const res = await request(app).post(`/api/villages/${code}/join`).set('Cookie', overflow.cookie).send({});
       expect(res.status).toBe(409);
-      expect(res.body.error.code).toBe('ROOM_FULL');
+      expect(res.body.error.code).toBe('VILLAGE_FULL');
     });
 
-    it('returns 404 for an unknown room code', async () => {
+    it('returns 404 for an unknown village code', async () => {
       const { cookie } = await createSession();
-      const res = await request(app).post('/api/rooms/ZZZZ/join').set('Cookie', cookie).send({});
+      const res = await request(app).post('/api/villages/ZZZZ/join').set('Cookie', cookie).send({});
       expect(res.status).toBe(404);
     });
   });
@@ -229,7 +229,7 @@ describeIfMongo('HTTP API integration', () => {
       const { brandFullGameState } = await import('@mafia/shared');
 
       const state = brandFullGameState({
-        roomCode: 'ABCD' as never,
+        villageCode: 'ABCD' as never,
         phase: 'NIGHT',
         roundNumber: 1,
         players: [
@@ -263,7 +263,7 @@ describeIfMongo('HTTP API integration', () => {
       const { brandFullGameState } = await import('@mafia/shared');
 
       const state = brandFullGameState({
-        roomCode: 'ABCD' as never,
+        villageCode: 'ABCD' as never,
         phase: 'NIGHT',
         roundNumber: 1,
         players: [
@@ -295,10 +295,10 @@ describeIfMongo('HTTP API integration', () => {
 
   describe('error response shape', () => {
     it('every error response has the consistent { error: { code, message, requestId } } shape', async () => {
-      const res = await request(app).get('/api/rooms/ZZZZ');
+      const res = await request(app).get('/api/villages/ZZZZ');
       expect(res.body).toMatchObject({
         error: {
-          code: 'ROOM_NOT_FOUND',
+          code: 'VILLAGE_NOT_FOUND',
           message: expect.any(String),
           requestId: expect.any(String),
         },
@@ -306,7 +306,7 @@ describeIfMongo('HTTP API integration', () => {
     });
 
     it('never leaks a stack trace', async () => {
-      const res = await request(app).get('/api/rooms/ZZZZ');
+      const res = await request(app).get('/api/villages/ZZZZ');
       expect(JSON.stringify(res.body)).not.toMatch(/at .*\.ts:\d+:\d+/);
     });
 

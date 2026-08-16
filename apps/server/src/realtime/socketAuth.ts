@@ -4,7 +4,7 @@
 // connection is only accepted if it presents a cookie that verifies against
 // SESSION_SECRET and resolves to a real player. Unknown/missing/tampered
 // sessions are rejected during the handshake, before `connection` fires, so
-// no unauthenticated socket ever reaches a room handler.
+// no unauthenticated socket ever reaches a village handler.
 // ---------------------------------------------------------------------------
 
 import cookie from 'cookie';

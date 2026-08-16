@@ -30,7 +30,7 @@ export function pid(id: string): PlayerId {
  * doesn't care about gets an empty/neutral default. */
 export function buildState(opts: BuildStateOptions): FullGameState {
   return brandFullGameState({
-    roomCode: 'ABCD' as FullGameState['roomCode'],
+    villageCode: 'ABCD' as FullGameState['villageCode'],
     phase: opts.phase ?? 'NIGHT',
     roundNumber: opts.roundNumber ?? 1,
     players: opts.players.map((p) => ({

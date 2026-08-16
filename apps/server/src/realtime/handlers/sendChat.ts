@@ -9,9 +9,9 @@
 
 import { randomUUID } from 'node:crypto';
 import { SendChatPayloadSchema, type ChatChannel } from '@mafia/shared';
-import { broadcastStateToRoom, gameRoom, playerChannel, type GameServer, type GameSocket } from '../emit';
+import { broadcastStateToVillage, gameVillage, playerChannel, type GameServer, type GameSocket } from '../emit';
 import { ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
-import { roomManager, type GameSession } from '../RoomManager';
+import { villageManager, type GameSession } from '../VillageManager';
 
 /** Determines which channel a message from `senderId` actually belongs to,
  * from server-known state alone. Dead players talk in DEAD; living mafia
@@ -30,7 +30,7 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
     const parsed = parseOrAck(SendChatPayloadSchema, payload, ack);
     if (!parsed) return;
 
-    const session = requireGameSession(parsed.roomCode, ack);
+    const session = requireGameSession(parsed.villageCode, ack);
     if (!session) return;
     if (!requirePlayerInSession(session, socket.player._id, ack)) return;
 
@@ -46,7 +46,7 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
     };
 
     session.state = { ...session.state, chatLog: [...session.state.chatLog, message] };
-    roomManager.setState(session.roomCode, session.state);
+    villageManager.setState(session.villageCode, session.state);
 
     if (session.gameId) {
       session.pendingEvents.push({ gameId: session.gameId, type: 'CHAT', payload: { message } });
@@ -54,8 +54,8 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
 
     if (channel === 'MAFIA' || channel === 'DEAD') {
       // Restricted channels: emit directly to each eligible recipient's
-      // private channel rather than the shared game room, so a socket
-      // that only ever joined the game room (never proven eligible for
+      // private channel rather than the shared village room, so a socket
+      // that only ever joined the village room (never proven eligible for
       // this channel) has no way to receive it even if it tried to listen
       // for the raw event name.
       const eligiblePlayerIds = session.state.players
@@ -65,13 +65,13 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
         io.to(playerChannel(playerId)).emit('chatMessage', message);
       }
     } else {
-      io.to(gameRoom(parsed.roomCode)).emit('chatMessage', message);
+      io.to(gameVillage(parsed.villageCode)).emit('chatMessage', message);
     }
 
     // Also refresh full state so a late-joining client's chatLog (already
     // filtered per-recipient by redactStateFor) picks up the new message
     // even if they missed the direct chatMessage emit above.
-    broadcastStateToRoom(io, session.state);
+    broadcastStateToVillage(io, session.state);
     ackOk(ack);
   });
 }

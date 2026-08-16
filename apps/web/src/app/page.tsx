@@ -1,10 +1,10 @@
 'use client';
 
 // ---------------------------------------------------------------------------
-// Home — the app's entry screen: large Create Room / Join Room buttons.
-// No game state, no room membership yet; this screen's only job is routing
-// the player toward name entry (if needed) and then either room creation
-// or the join-code flow.
+// Home — the app's entry screen: large Create Village / Join Village buttons.
+// No game state, no village membership yet; this screen's only job is
+// routing the player toward name entry (if needed) and then either village
+// creation or the join-code flow.
 // ---------------------------------------------------------------------------
 
 import { useRouter } from 'next/navigation';
@@ -48,14 +48,14 @@ export default function HomePage() {
             onClick={goToCreate}
             className="flex min-h-14 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-primary-content transition-transform active:scale-[0.98] motion-reduce:transition-none"
           >
-            Create Room
+            Create Village
           </button>
           <button
             type="button"
             onClick={goToJoin}
             className="flex min-h-14 items-center justify-center rounded-2xl bg-white/10 text-lg font-bold text-base-content transition-transform active:scale-[0.98] motion-reduce:transition-none"
           >
-            Join Room
+            Join Village
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 // ---------------------------------------------------------------------------
-// ShareRoomCode — the prominent shareable room code display: large
+// ShareVillageCode — the prominent shareable village code display: large
 // letter-spaced code, a native share-sheet button (Web Share API) where
 // supported, falling back to copy-to-clipboard everywhere else (and as a
 // secondary action even where share IS supported, since some players will
@@ -10,7 +10,7 @@
 
 import { useState } from 'react';
 
-export interface ShareRoomCodeProps {
+export interface ShareVillageCodeProps {
   code: string;
   /** Full joinable URL, e.g. `https://mafia.app/join?code=ABCD` — used as
    * the share payload / copy target so a tapped link goes straight into
@@ -18,7 +18,7 @@ export interface ShareRoomCodeProps {
   joinUrl: string;
 }
 
-export function ShareRoomCode({ code, joinUrl }: ShareRoomCodeProps) {
+export function ShareVillageCode({ code, joinUrl }: ShareVillageCodeProps) {
   const [copied, setCopied] = useState(false);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
@@ -51,8 +51,8 @@ export function ShareRoomCode({ code, joinUrl }: ShareRoomCodeProps) {
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl bg-elevated p-5">
-      <span className="text-sm text-base-content/60">Room code</span>
-      <span className="select-all text-4xl font-black tracking-[0.3em] text-primary" aria-label={`Room code ${code.split('').join(' ')}`}>
+      <span className="text-sm text-base-content/60">Village code</span>
+      <span className="select-all text-4xl font-black tracking-[0.3em] text-primary" aria-label={`Village code ${code.split('').join(' ')}`}>
         {code}
       </span>
 

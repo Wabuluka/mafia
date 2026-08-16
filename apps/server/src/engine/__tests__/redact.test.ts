@@ -40,7 +40,7 @@ describe('redactStateFor', () => {
 
   it('reveals a role once it has been publicly revealed (revealedRole)', () => {
     const state = brandFullGameState({
-      roomCode: 'ABCD' as FullGameState['roomCode'],
+      villageCode: 'ABCD' as FullGameState['villageCode'],
       phase: 'DAY_DISCUSSION',
       roundNumber: 1,
       players: [
@@ -268,7 +268,7 @@ describe('redactStateFor property: no cross-player role leakage', () => {
     fc.assert(
       fc.property(gameArb, ({ players, viewerIndex }) => {
         const state = brandFullGameState({
-          roomCode: 'ABCD' as FullGameState['roomCode'],
+          villageCode: 'ABCD' as FullGameState['villageCode'],
           phase: 'DAY_DISCUSSION',
           roundNumber: 1,
           players: players.map((p) => ({

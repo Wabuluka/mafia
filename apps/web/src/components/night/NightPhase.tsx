@@ -91,7 +91,7 @@ export function NightPhase({ view }: NightPhaseProps) {
     setSubmitting(true);
     setLocked(true); // optimistic: lock immediately so a double-tap can't double-submit
 
-    const result = await emit.submitNightAction({ roomCode: view.roomCode, targetId: stagedTargetId });
+    const result = await emit.submitNightAction({ villageCode: view.villageCode, targetId: stagedTargetId });
 
     setSubmitting(false);
 
@@ -240,7 +240,7 @@ function MafiaNightContent({ view, stagedTargetId, onStage, locked }: RoleNightC
       <MafiaChatPanel
         messages={mafiaMessages}
         selfPlayerId={view.you.playerId}
-        onSend={(body) => void emit.sendChat({ roomCode: view.roomCode, body })}
+        onSend={(body) => void emit.sendChat({ villageCode: view.villageCode, body })}
       />
     </div>
   );

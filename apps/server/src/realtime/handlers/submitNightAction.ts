@@ -13,7 +13,7 @@ import { emitStateToPlayer, type GameServer, type GameSocket } from '../emit';
 import { ackError, ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
 import { isDuplicateAction } from '../idempotency';
 import { tryResolveEarly } from '../phaseLoop';
-import { roomManager } from '../RoomManager';
+import { villageManager } from '../VillageManager';
 
 /** Maps an engine rejection reason to the closest ErrorPayload code the
  * shared wire contract defines. Not a 1:1 mapping — the engine has a
@@ -40,13 +40,13 @@ export function registerSubmitNightActionHandler(io: GameServer, socket: GameSoc
     const parsed = parseOrAck(SubmitNightActionPayloadSchema, payload, ack);
     if (!parsed) return;
 
-    const session = requireGameSession(parsed.roomCode, ack);
+    const session = requireGameSession(parsed.villageCode, ack);
     if (!session) return;
     if (!requirePlayerInSession(session, socket.player._id, ack)) return;
 
     // Idempotency: a flaky connection retrying the same logical submission
     // must not double-apply. The client is expected to generate a stable
-    // id per logical action (e.g. derived from roomCode+phase+round) and
+    // id per logical action (e.g. derived from villageCode+phase+round) and
     // resend the identical id on retry; we key on (actor, phase, round)
     // rather than trusting a client-supplied id at all, which is stronger
     // — it makes a *second distinct* submission from the same actor in the
@@ -74,7 +74,7 @@ export function registerSubmitNightActionHandler(io: GameServer, socket: GameSoc
     }
 
     session.state = result.value;
-    roomManager.setState(session.roomCode, session.state);
+    villageManager.setState(session.villageCode, session.state);
 
     const recordedAction = session.state.nightActions.at(-1);
     if (recordedAction) {

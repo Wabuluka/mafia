@@ -70,7 +70,7 @@ export async function persistGameEnd(
   gameEventsRepository.forgetSequenceCounter(gameId);
 }
 
-/** Marks a game ABANDONED — e.g. every player disconnected and the room
+/** Marks a game ABANDONED — e.g. every player disconnected and the village
  * was torn down mid-game. Not a phase boundary, but still a terminal,
  * comparatively rare event worth its own explicit entry point. */
 export async function persistGameAbandoned(gameId: string): Promise<void> {

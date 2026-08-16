@@ -21,15 +21,15 @@ import type { Document } from 'mongodb';
 const ROLE_ENUM = ['VILLAGER', 'MAFIA', 'DETECTIVE', 'DOCTOR', 'JESTER'];
 const PHASE_ENUM = ['LOBBY', 'NIGHT', 'DAY_DISCUSSION', 'DAY_VOTE', 'GAME_OVER'];
 const GAME_END_REASON_ENUM = ['TOWN_WIN', 'MAFIA_WIN', 'JESTER_WIN', 'DRAW', 'ABANDONED'];
-const ROOM_CODE_PATTERN = '^[A-Z0-9]{4}$';
+const VILLAGE_CODE_PATTERN = '^[A-Z0-9]{4}$';
 
-export const roomsValidator: Document = {
+export const villagesValidator: Document = {
   $jsonSchema: {
     bsonType: 'object',
     required: ['_id', 'hostId', 'maxPlayers', 'minPlayers', 'playerIds', 'status', 'createdAt', 'lastActivityAt'],
     additionalProperties: false,
     properties: {
-      _id: { bsonType: 'string', pattern: ROOM_CODE_PATTERN, description: 'room code, 4 uppercase alphanumeric chars' },
+      _id: { bsonType: 'string', pattern: VILLAGE_CODE_PATTERN, description: 'village code, 4 uppercase alphanumeric chars' },
       hostId: { bsonType: 'string' },
       maxPlayers: { bsonType: 'int', minimum: 1 },
       minPlayers: { bsonType: 'int', minimum: 1 },
@@ -46,7 +46,7 @@ export const gamesValidator: Document = {
     bsonType: 'object',
     required: [
       '_id',
-      'roomCode',
+      'villageCode',
       'hostId',
       'status',
       'currentPhase',
@@ -58,7 +58,7 @@ export const gamesValidator: Document = {
     additionalProperties: false,
     properties: {
       _id: { bsonType: 'string', description: 'generated game id (uuid)' },
-      roomCode: { bsonType: 'string', pattern: ROOM_CODE_PATTERN },
+      villageCode: { bsonType: 'string', pattern: VILLAGE_CODE_PATTERN },
       hostId: { bsonType: 'string' },
       status: { enum: ['IN_PROGRESS', 'COMPLETED', 'ABANDONED'] },
       currentPhase: { enum: PHASE_ENUM },

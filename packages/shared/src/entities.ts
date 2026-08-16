@@ -2,18 +2,18 @@ import { z } from 'zod';
 import { PhaseSchema, PlayerStatusSchema, RoleSchema } from './enums';
 
 // ---------------------------------------------------------------------------
-// Primitive id brands — prevents e.g. passing a roomCode where a playerId
+// Primitive id brands — prevents e.g. passing a villageCode where a playerId
 // is expected, since both are plain strings underneath.
 // ---------------------------------------------------------------------------
 
 export const PlayerIdSchema = z.string().uuid().brand<'PlayerId'>();
 export type PlayerId = z.infer<typeof PlayerIdSchema>;
 
-export const RoomCodeSchema = z
+export const VillageCodeSchema = z
   .string()
-  .regex(/^[A-Z0-9]{4}$/, 'Room code must be 4 uppercase alphanumeric characters')
-  .brand<'RoomCode'>();
-export type RoomCode = z.infer<typeof RoomCodeSchema>;
+  .regex(/^[A-Z0-9]{4}$/, 'Village code must be 4 uppercase alphanumeric characters')
+  .brand<'VillageCode'>();
+export type VillageCode = z.infer<typeof VillageCodeSchema>;
 
 // ---------------------------------------------------------------------------
 // Entities
@@ -34,14 +34,14 @@ export const PlayerSchema = z.object({
 });
 export type Player = z.infer<typeof PlayerSchema>;
 
-export const RoomSchema = z.object({
-  code: RoomCodeSchema,
+export const VillageSchema = z.object({
+  code: VillageCodeSchema,
   hostId: PlayerIdSchema,
   createdAt: z.number().int().nonnegative(),
   maxPlayers: z.number().int().positive(),
   minPlayers: z.number().int().positive(),
 });
-export type Room = z.infer<typeof RoomSchema>;
+export type Village = z.infer<typeof VillageSchema>;
 
 export const PhaseTimerSchema = z.object({
   phase: PhaseSchema,

@@ -27,14 +27,14 @@
 //       handshake, never from anything the client sends. There's no field
 ///      to lie in.
 //
-// 3. Acting in a game/room the player was never actually added to (e.g.
-//    guessing another room's 4-character code and emitting events at it).
+// 3. Acting in a game/village the player was never actually added to (e.g.
+//    guessing another village's 4-character code and emitting events at it).
 //    -> `requirePlayerInSession` (handlerContext.ts) checks the caller's
 //       id against the session's live player roster before every mutating
-//       handler does anything. `joinRoom` itself additionally checks the
-//       player is on the room's Mongo-persisted `playerIds` list — a
-//       socket can't even attach to a room's channels without having gone
-//       through the HTTP join endpoint first (see joinRoom.ts).
+//       handler does anything. `joinVillage` itself additionally checks the
+//       player is on the village's Mongo-persisted `playerIds` list — a
+//       socket can't even attach to a village's channels without having gone
+//       through the HTTP join endpoint first (see joinVillage.ts).
 //
 // 4. Submitting a night action as a role you don't have, or acting for a
 //    role that doesn't act at night (e.g. a VILLAGER submitting a "kill").
@@ -52,7 +52,7 @@
 //    submitting a night action during DAY_VOTE), e.g. to bypass a UI that
 //    would normally prevent it.
 //    -> Both engine functions check `state.phase` first and reject
-//       WRONG_PHASE. The phase is server-authoritative (RoomManager's
+//       WRONG_PHASE. The phase is server-authoritative (VillageManager's
 //       in-memory FullGameState), never trusted from the client.
 //
 // 7. Submitting multiple night actions in the same round to influence the
@@ -84,7 +84,7 @@
 //        to produce a PlayerView, and it's built field-by-field from named
 //        sources — it never copies FullGameState and deletes fields, so a
 //        newly added private field can't accidentally leak by omission of
-//        a delete. `emit.ts`'s `emitStateToPlayer`/`broadcastStateToRoom`
+//        a delete. `emit.ts`'s `emitStateToPlayer`/`broadcastStateToVillage`
 //        are the ONLY functions in this codebase allowed to call
 //        `redactStateFor` and hand the result to `.emit(...)` — see that
 //        module's header. A 200-run property test (engine/__tests__/
@@ -93,10 +93,10 @@
 //
 // 11. Receiving a shared/broadcast payload that happens to contain
 //     everyone's private data because it was easier to send one message to
-//     the room.
+//     the village.
 //     -> There is no such broadcast. Every state emission redacts once per
 //        recipient and sends it to that player's own private Socket.IO
-//        channel (`player:<playerId>`), never the shared game room. See
+//        channel (`player:<playerId>`), never the shared village room. See
 //        emit.ts's module header for why a single shared payload is
 //        structurally incapable of doing this safely.
 //
@@ -106,7 +106,7 @@
 //        live role/status (there is no client-supplied channel field to
 //        spoof), and MAFIA/DEAD channel messages are emitted directly to
 //        each eligible recipient's private channel — never broadcast to
-//        the shared game room a merely-connected socket could snoop on.
+//        the shared village room a merely-connected socket could snoop on.
 //
 // 13. Forging a detective result, or reading someone else's detective
 //     results.
@@ -136,7 +136,7 @@
 //        detail, not a role signal).
 //
 // 16. Tampering with the payload's shape/types entirely (wrong types,
-//     extra fields, malformed room codes) to trigger a server crash or
+//     extra fields, malformed village codes) to trigger a server crash or
 //     bypass a check via a type-confusion bug.
 //     -> Every handler's first step is `parseOrAck` against the exact Zod
 //        schema @mafia/shared defines for that event — the same schema
@@ -145,10 +145,10 @@
 //        VALIDATION_ERROR and the handler returns before touching any
 //        state.
 //
-// 17. Sending a room code / target id that's syntactically valid but
+// 17. Sending a village code / target id that's syntactically valid but
 //     doesn't correspond to anything (id/code enumeration, guessing).
 //     -> Every lookup (`requireGameSession`, engine target validation)
-//        fails closed with a typed rejection (ROOM_NOT_FOUND,
+//        fails closed with a typed rejection (VILLAGE_NOT_FOUND,
 //        INVALID_TARGET) rather than throwing or falling through to
 //        undefined behavior.
 //
@@ -178,20 +178,20 @@
 //        prior vote, so spamming can't fabricate "everyone's in" sooner
 //        than it genuinely is.
 //
-// 20. A non-host player calling kickPlayer or updateRoomSettings to remove
+// 20. A non-host player calling kickPlayer or updateVillageSettings to remove
 //     another player or change phase durations without authority to.
 //     -> Both handlers check `caller.isHost` read from server state
 //        before doing anything, identical to startGame's own check —
 //        NOT_HOST otherwise. There is also no way to forge host status:
-//        `isHost` is set only by joinRoom (the room creator) or by the
+//        `isHost` is set only by joinVillage (the village creator) or by the
 //        server's own host-transfer logic (lobbyManagement.ts), never by
 //        anything a client sends.
 //
 // 21. A host trying to kick themselves (to trigger some edge case in host
-//     transfer or room teardown) instead of using leaveRoom.
+//     transfer or village teardown) instead of using leaveVillage.
 //     -> kickPlayer explicitly rejects `targetPlayerId === caller.id` with
 //        VALIDATION_ERROR, forcing the one already-correct path
-//        (leaveRoom, which runs the real host-transfer logic) instead of
+//        (leaveVillage, which runs the real host-transfer logic) instead of
 //        a second one that would have to reimplement the same rule.
 //
 // 22. Kicking a player (or changing settings) after the game has already
@@ -203,8 +203,8 @@
 
 import type { GameServer, GameSocket } from './emit';
 import { socketAuthMiddleware } from './socketAuth';
-import { registerJoinRoomHandler } from './handlers/joinRoom';
-import { registerLeaveRoomHandler } from './handlers/leaveRoom';
+import { registerJoinVillageHandler } from './handlers/joinVillage';
+import { registerLeaveVillageHandler } from './handlers/leaveVillage';
 import { registerSetReadyHandler } from './handlers/setReady';
 import { registerStartGameHandler } from './handlers/startGame';
 import { registerSubmitNightActionHandler } from './handlers/submitNightAction';
@@ -213,10 +213,10 @@ import { registerSendChatHandler } from './handlers/sendChat';
 import { registerRequestResyncHandler } from './handlers/requestResync';
 import { registerDisconnectHandler } from './handlers/disconnect';
 import { registerKickPlayerHandler } from './handlers/kickPlayer';
-import { registerUpdateRoomSettingsHandler } from './handlers/updateRoomSettings';
+import { registerUpdateVillageSettingsHandler } from './handlers/updateVillageSettings';
 
-export { roomManager, type GameSession } from './RoomManager';
-export { emitStateToPlayer, broadcastStateToRoom, type GameServer, type GameSocket } from './emit';
+export { villageManager, type GameSession } from './VillageManager';
+export { emitStateToPlayer, broadcastStateToVillage, type GameServer, type GameSocket } from './emit';
 
 /** Wires authentication and every ClientToServerEvents handler onto `io`.
  * Call exactly once at server boot. */
@@ -224,8 +224,8 @@ export function attachRealtime(io: GameServer): void {
   io.use(socketAuthMiddleware);
 
   io.on('connection', (socket: GameSocket) => {
-    registerJoinRoomHandler(io, socket);
-    registerLeaveRoomHandler(io, socket);
+    registerJoinVillageHandler(io, socket);
+    registerLeaveVillageHandler(io, socket);
     registerSetReadyHandler(io, socket);
     registerStartGameHandler(io, socket);
     registerSubmitNightActionHandler(io, socket);
@@ -233,7 +233,7 @@ export function attachRealtime(io: GameServer): void {
     registerSendChatHandler(io, socket);
     registerRequestResyncHandler(io, socket);
     registerKickPlayerHandler(io, socket);
-    registerUpdateRoomSettingsHandler(io, socket);
+    registerUpdateVillageSettingsHandler(io, socket);
     registerDisconnectHandler(io, socket);
   });
 }

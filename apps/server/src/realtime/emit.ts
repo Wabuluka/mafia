@@ -9,12 +9,14 @@
 //
 // Per-player private channel: on connect, every authenticated socket joins
 // a Socket.IO room named `player:<playerId>` (see index.ts) in addition to
-// the game room `game:<roomCode>`. Broadcasting state never uses
-// `io.to(gameRoom).emit(...)` with a single shared payload — that would
+// the shared village room `game:<villageCode>` (see `gameVillage` below —
+// "room" here is Socket.IO's own primitive/terminology, distinct from our
+// "village" domain concept). Broadcasting state never uses
+// `io.to(gameVillage(...)).emit(...)` with a single shared payload — that would
 // send the SAME object to every player, which is exactly the leak this
 // whole layer exists to prevent (a shared payload can only be redacted to
 // the lowest common denominator, i.e. it can't contain anyone's private
-// `you` block at all, or it leaks everyone's). Instead, `broadcastStateToRoom`
+// `you` block at all, or it leaks everyone's). Instead, `broadcastStateToVillage`
 // below redacts once per player and emits to that player's private channel
 // individually.
 // ---------------------------------------------------------------------------
@@ -33,7 +35,7 @@ import { redactStateFor } from '../engine';
 
 export type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
-/** The fully-typed per-connection socket: `socket.on('joinRoom', ...)` etc.
+/** The fully-typed per-connection socket: `socket.on('joinVillage', ...)` etc.
  * are checked against ClientToServerEvents' exact payload/ack signatures.
  * Every handler module should import this instead of the bare `Socket`
  * type from 'socket.io', so a payload-shape mistake is a compile error
@@ -44,14 +46,14 @@ export function playerChannel(playerId: PlayerId): string {
   return `player:${playerId}`;
 }
 
-export function gameRoom(roomCode: string): string {
-  return `game:${roomCode}`;
+export function gameVillage(villageCode: string): string {
+  return `game:${villageCode}`;
 }
 
 /** Redacts `state` for exactly one player and emits it to that player's
  * private channel. This is the only function in the codebase that is
  * allowed to call `redactStateFor` and hand the result to `.emit(...)` —
- * every other call site should go through this or `broadcastStateToRoom`. */
+ * every other call site should go through this or `broadcastStateToVillage`. */
 export function emitStateToPlayer(io: GameServer, state: FullGameState, playerId: PlayerId): void {
   const view = redactStateFor(state, playerId);
   io.to(playerChannel(playerId)).emit('stateUpdate', { state: view });
@@ -59,15 +61,15 @@ export function emitStateToPlayer(io: GameServer, state: FullGameState, playerId
 
 /** Redacts `state` once per player currently in the game and emits each
  * result to that player's own private channel — never a single shared
- * broadcast to the game room. Use this after any state mutation that every
+ * broadcast to the shared village room. Use this after any state mutation that every
  * player needs to see reflected (a join, a death, a vote tally update). */
-export function broadcastStateToRoom(io: GameServer, state: FullGameState): void {
+export function broadcastStateToVillage(io: GameServer, state: FullGameState): void {
   for (const player of state.players) {
     emitStateToPlayer(io, state, player.id);
   }
 }
 
-/** Same per-player redaction discipline as `broadcastStateToRoom`, but for
+/** Same per-player redaction discipline as `broadcastStateToVillage`, but for
  * the `phaseChanged` event, which additionally carries the phase that just
  * ended and the narration text describing what happened during it — see
  * phaseLoop.ts's `narrationFor`. */

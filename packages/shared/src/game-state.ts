@@ -6,7 +6,7 @@ import {
   PhaseTimerSchema,
   PlayerIdSchema,
   PlayerSchema,
-  RoomCodeSchema,
+  VillageCodeSchema,
   VoteSchema,
 } from './entities';
 
@@ -27,7 +27,7 @@ import {
 declare const FULL_GAME_STATE_BRAND: unique symbol;
 
 export const FullGameStateSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   phase: PhaseSchema,
   /** Incremented once per full night+day cycle. Starts at 0 in the lobby. */
   roundNumber: z.number().int().nonnegative(),
@@ -88,7 +88,7 @@ export type MafiaNightTarget = z.infer<typeof MafiaNightTargetSchema>;
 
 export const YouSchema = z.object({
   playerId: PlayerIdSchema,
-  /** Absent while the room is still in the LOBBY — roles aren't assigned
+  /** Absent while the village is still in the LOBBY — roles aren't assigned
    * until the host starts the game, so there's nothing to report yet. */
   role: RoleSchema.optional(),
   /** Populated only for the MAFIA role — teammate ids for the mafia chat. */
@@ -112,7 +112,7 @@ export const YouSchema = z.object({
 export type You = z.infer<typeof YouSchema>;
 
 export const PlayerViewSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   phase: PhaseSchema,
   roundNumber: z.number().int().nonnegative(),
   /** Other players, with roles hidden unless revealed. */

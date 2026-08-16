@@ -14,14 +14,14 @@ import type {
   PlayerId,
   PublicPlayer,
   Role,
-  RoomCode,
+  VillageCode,
   Vote,
 } from '@mafia/shared';
 
-/** Lobby metadata for a room. Deleted automatically by the TTL index once
+/** Lobby metadata for a village. Deleted automatically by the TTL index once
  * abandoned (see `indexes.ts`), or promoted into a `GameDocument` on start. */
-export interface RoomDocument {
-  _id: RoomCode; // the room code itself is the primary key — see indexes.ts
+export interface VillageDocument {
+  _id: VillageCode; // the village code itself is the primary key — see indexes.ts
   hostId: PlayerId;
   maxPlayers: number;
   minPlayers: number;
@@ -35,8 +35,8 @@ export interface RoomDocument {
 /** A full game record. Written at phase boundaries and on game end — never
  * on every player action. See the module-level comment in `index.ts`. */
 export interface GameDocument {
-  _id: string; // generated game id (uuid), independent of the room code
-  roomCode: RoomCode;
+  _id: string; // generated game id (uuid), independent of the village code
+  villageCode: VillageCode;
   hostId: PlayerId;
   status: 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED';
   currentPhase: Phase;
@@ -81,7 +81,7 @@ interface GameEventBase<Type extends string, Payload> {
 /**
  * An anonymous player identity keyed by an opaque session token (not a user
  * account — no email/password, nothing PII-bearing). The token is what a
- * reconnecting browser presents to resume a room/game.
+ * reconnecting browser presents to resume a village/game.
  */
 export interface PlayerDocument {
   _id: PlayerId;

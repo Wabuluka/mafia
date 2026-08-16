@@ -8,7 +8,7 @@
 // a client-generated `actionId`.
 // ---------------------------------------------------------------------------
 
-import type { GameSession } from './RoomManager';
+import type { GameSession } from './VillageManager';
 
 /** A cap on the dedupe set's size — without this, a misbehaving or hostile
  * client sending a firehose of unique actionIds could grow this set

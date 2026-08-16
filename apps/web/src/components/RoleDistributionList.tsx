@@ -8,15 +8,7 @@
 // game starts with this many players right now.
 // ---------------------------------------------------------------------------
 
-import { resolveRoleDistribution, ROLE_TEAM, type Role } from '@mafia/shared';
-
-const ROLE_LABELS: Record<Role, string> = {
-  VILLAGER: 'Villager',
-  MAFIA: 'Mafia',
-  DETECTIVE: 'Detective',
-  DOCTOR: 'Doctor',
-  JESTER: 'Jester',
-};
+import { resolveRoleDistribution, ROLE_DISPLAY_LABEL, ROLE_TEAM, type Role } from '@mafia/shared';
 
 const TEAM_DOT_CLASS: Record<Role, string> = {
   VILLAGER: 'bg-village-accent',
@@ -58,7 +50,7 @@ export function RoleDistributionList({ playerCount }: RoleDistributionListProps)
           >
             <span aria-hidden="true" className={`h-2 w-2 rounded-full ${TEAM_DOT_CLASS[role]}`} />
             <span className="font-semibold">{count}×</span>
-            <span className="text-base-content/80">{ROLE_LABELS[role]}</span>
+            <span className="text-base-content/80">{ROLE_DISPLAY_LABEL[role]}</span>
           </li>
         ))}
       </ul>

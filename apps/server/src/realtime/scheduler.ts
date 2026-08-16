@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The phase scheduler: a single, drift-resistant timer per room that fires
+// The phase scheduler: a single, drift-resistant timer per village that fires
 // exactly once when a phase's absolute deadline is reached (or is cancelled
 // early — see earlyResolution.ts). This is the ONLY place `setTimeout` is
 // used to drive phase advancement; nothing else schedules a phase change.
@@ -27,10 +27,10 @@
 // `endsAt` (never a duration) and render their own countdown from it,
 // which is the client-side half of the same principle: the server's clock
 // is the only clock that matters (see PhaseTimer in @mafia/shared and the
-// module header in RoomManager.ts).
+// module header in VillageManager.ts).
 // ---------------------------------------------------------------------------
 
-/** A single pending deadline. Held on the GameSession (see RoomManager.ts)
+/** A single pending deadline. Held on the GameSession (see VillageManager.ts)
  * so it can always be located and cleared — see `clearDeadline`. */
 export interface ScheduledDeadline {
   endsAt: number;
@@ -42,7 +42,7 @@ export interface ScheduledDeadline {
  * epoch-ms timestamp, NOT a duration). Returns a handle the caller must
  * hold and eventually pass to `clearDeadline` — either when the deadline
  * fires normally, when it's cancelled early (all actions in), or when the
- * room is torn down, so a session's timer is never leaked.
+ * village is torn down, so a session's timer is never leaked.
  *
  * If `endsAtMs` has already passed (e.g. the process was paused, or a
  * caller is rescheduling after a restart against a deadline computed

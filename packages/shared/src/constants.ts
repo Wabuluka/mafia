@@ -8,15 +8,15 @@ export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 15;
 
 // ---------------------------------------------------------------------------
-// Room code format — 4 uppercase alphanumeric characters, matching
-// RoomCodeSchema's regex in entities.ts. Kept here as the single source for
+// Village code format — 4 uppercase alphanumeric characters, matching
+// VillageCodeSchema's regex in entities.ts. Kept here as the single source for
 // generating codes; entities.ts is the single source for validating them.
 // Excludes 0/O and 1/I so a code is never ambiguous when read aloud or
 // handwritten.
 // ---------------------------------------------------------------------------
 
-export const ROOM_CODE_LENGTH = 4;
-export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
+export const VILLAGE_CODE_LENGTH = 4;
+export const VILLAGE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 
 // ---------------------------------------------------------------------------
 // Role -> team mapping. The single source of truth for win-condition checks.
@@ -29,6 +29,33 @@ export const ROLE_TEAM: Readonly<Record<Role, Team>> = {
   MAFIA: 'MAFIA',
   JESTER: 'NEUTRAL',
 };
+
+// ---------------------------------------------------------------------------
+// Role -> user-facing display label. The VILLAGER role's wire/enum value is
+// intentionally left unchanged (see the room->village rename note in
+// events.ts) to avoid a breaking change to the `Role` enum stored in
+// MongoDB documents (games.repository, game-events) and sent over the wire
+// — renaming the enum value would require a data migration for any
+// persisted game/event documents. Only the copy shown to players changes:
+// every UI surface that renders a role name to a human MUST go through this
+// map (or `roleLabel` below) rather than rendering the raw enum value, so
+// "Villager" never leaks into the UI.
+// ---------------------------------------------------------------------------
+
+export const ROLE_DISPLAY_LABEL: Readonly<Record<Role, string>> = {
+  VILLAGER: 'Resident',
+  DETECTIVE: 'Detective',
+  DOCTOR: 'Doctor',
+  MAFIA: 'Mafia',
+  JESTER: 'Jester',
+};
+
+/** Convenience accessor for `ROLE_DISPLAY_LABEL` — prefer this in UI code
+ * over indexing the map directly, so a future non-enum-keyed lookup (e.g.
+ * custom roles) has one call site to change. */
+export function roleLabel(role: Role): string {
+  return ROLE_DISPLAY_LABEL[role];
+}
 
 // ---------------------------------------------------------------------------
 // Role distribution table — for a given player count, how many of each

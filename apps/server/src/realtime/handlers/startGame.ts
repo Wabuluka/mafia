@@ -7,9 +7,9 @@
 // ---------------------------------------------------------------------------
 
 import { MIN_PLAYERS, StartGamePayloadSchema } from '@mafia/shared';
-import { roomsRepository } from '../../db';
+import { villagesRepository } from '../../db';
 import { assignRoles } from '../../engine';
-import { broadcastStateToRoom, type GameServer, type GameSocket } from '../emit';
+import { broadcastStateToVillage, type GameServer, type GameSocket } from '../emit';
 import { ackError, ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
 import { persistGameStart } from '../persistence';
 import { scheduleNextPhase } from '../phaseLoop';
@@ -19,7 +19,7 @@ export function registerStartGameHandler(io: GameServer, socket: GameSocket): vo
     const parsed = parseOrAck(StartGamePayloadSchema, payload, ack);
     if (!parsed) return;
 
-    const session = requireGameSession(parsed.roomCode, ack);
+    const session = requireGameSession(parsed.villageCode, ack);
     if (!session) return;
     if (!requirePlayerInSession(session, socket.player._id, ack)) return;
 
@@ -67,13 +67,13 @@ export function registerStartGameHandler(io: GameServer, socket: GameSocket): vo
     const gameId = await persistGameStart(session.state);
     session.gameId = gameId;
 
-    await roomsRepository.setRoomStatus(parsed.roomCode, 'IN_GAME');
+    await villagesRepository.setVillageStatus(parsed.villageCode, 'IN_GAME');
 
     // Schedule BEFORE broadcasting: scheduleNextPhase stamps the absolute
     // deadline onto session.state.phaseTimer, and clients must never see a
     // NIGHT state with no timer attached, even for one broadcast.
     scheduleNextPhase(io, session);
-    broadcastStateToRoom(io, session.state);
+    broadcastStateToVillage(io, session.state);
     ackOk(ack);
   });
 }

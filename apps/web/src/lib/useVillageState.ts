@@ -1,8 +1,8 @@
 'use client';
 
 // ---------------------------------------------------------------------------
-// useRoomState — joins a room over the socket and tracks the live
-// PlayerView for it. This is the one hook every room-scoped screen
+// useVillageState — joins a village over the socket and tracks the live
+// PlayerView for it. This is the one hook every village-scoped screen
 // (lobby now, in-game screens later) uses to get "what does the server
 // say the current state is" — it never invents or guesses state locally;
 // every field comes straight from the most recent `stateUpdate` /
@@ -10,34 +10,34 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from 'react';
-import type { PlayerView, RoomCode, RoomSettingsUpdatedPayload } from '@mafia/shared';
+import type { PlayerView, VillageCode, VillageSettingsUpdatedPayload } from '@mafia/shared';
 import { useSocket } from './socket-context';
 
-export interface RoomStateResult {
+export interface VillageStateResult {
   view: PlayerView | null;
-  /** Set once joinRoom's ack comes back with an error (e.g. NOT_IN_GAME —
-   * the socket tried to join a room it was never added to via the HTTP
+  /** Set once joinVillage's ack comes back with an error (e.g. NOT_IN_GAME —
+   * the socket tried to join a village it was never added to via the HTTP
    * join endpoint first). `null` once a successful join/state arrives. */
   joinError: string | null;
-  roomSettings: RoomSettingsUpdatedPayload['phaseDurationsMs'] | null;
+  villageSettings: VillageSettingsUpdatedPayload['phaseDurationsMs'] | null;
 }
 
-export function useRoomState(roomCode: RoomCode | null, playerName: string): RoomStateResult {
-  const { socket, status, emit, connect, setActiveRoom } = useSocket();
+export function useVillageState(villageCode: VillageCode | null, playerName: string): VillageStateResult {
+  const { socket, status, emit, connect, setActiveVillage } = useSocket();
   const [view, setView] = useState<PlayerView | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [roomSettings, setRoomSettings] = useState<RoomStateResult['roomSettings']>(null);
+  const [villageSettings, setVillageSettings] = useState<VillageStateResult['villageSettings']>(null);
   const hasJoinedRef = useRef(false);
 
-  // Open the connection the moment this hook is given a real room code to
-  // work with. Callers only ever pass a non-null roomCode once they've
+  // Open the connection the moment this hook is given a real village code to
+  // work with. Callers only ever pass a non-null villageCode once they've
   // already confirmed (over HTTP) that a session exists — see the lobby
   // page's pre-flight check — so by this point the session cookie the
   // socket handshake needs is guaranteed to be set. See socket-context.tsx's
   // module header for why the socket must NOT connect any earlier than this.
   useEffect(() => {
-    if (roomCode) connect();
-  }, [roomCode, connect]);
+    if (villageCode) connect();
+  }, [villageCode, connect]);
 
   // Subscribe to state-carrying events for the lifetime of the socket —
   // independent of the join attempt below, since a resync (see
@@ -52,18 +52,18 @@ export function useRoomState(roomCode: RoomCode | null, playerName: string): Roo
     function onPhaseChanged(payload: { state: PlayerView }) {
       setView(payload.state);
     }
-    function onSettingsUpdated(payload: RoomSettingsUpdatedPayload) {
-      setRoomSettings(payload.phaseDurationsMs);
+    function onSettingsUpdated(payload: VillageSettingsUpdatedPayload) {
+      setVillageSettings(payload.phaseDurationsMs);
     }
 
     socket.on('stateUpdate', onStateUpdate);
     socket.on('phaseChanged', onPhaseChanged);
-    socket.on('roomSettingsUpdated', onSettingsUpdated);
+    socket.on('villageSettingsUpdated', onSettingsUpdated);
 
     return () => {
       socket.off('stateUpdate', onStateUpdate);
       socket.off('phaseChanged', onPhaseChanged);
-      socket.off('roomSettingsUpdated', onSettingsUpdated);
+      socket.off('villageSettingsUpdated', onSettingsUpdated);
     };
   }, [socket]);
 
@@ -71,16 +71,16 @@ export function useRoomState(roomCode: RoomCode | null, playerName: string): Roo
   // (re)connect — status flipping to 'connected' after a drop means the
   // underlying transport reconnected, and while SocketProvider already
   // fires `requestResync` for us in that case (see socket-context.tsx),
-  // that resync only works for a room the server still has this player
+  // that resync only works for a village the server still has this player
   // registered in; a genuinely fresh connect still needs an explicit join.
   useEffect(() => {
-    if (!roomCode || status !== 'connected' || hasJoinedRef.current) return;
+    if (!villageCode || status !== 'connected' || hasJoinedRef.current) return;
 
     hasJoinedRef.current = true;
-    setActiveRoom(roomCode);
+    setActiveVillage(villageCode);
 
     emit
-      .joinRoom({ roomCode, playerName })
+      .joinVillage({ villageCode, playerName })
       .then((result) => {
         if (!result.ok) {
           setJoinError(result.error.message);
@@ -88,10 +88,10 @@ export function useRoomState(roomCode: RoomCode | null, playerName: string): Roo
         }
       })
       .catch(() => {
-        setJoinError('Could not join the room. Check your connection and try again.');
+        setJoinError('Could not join the village. Check your connection and try again.');
         hasJoinedRef.current = false;
       });
-  }, [roomCode, status, playerName, emit, setActiveRoom]);
+  }, [villageCode, status, playerName, emit, setActiveVillage]);
 
   // Reset the join-attempted flag on disconnect so a later reconnect
   // re-joins rather than assuming the earlier join still holds.
@@ -101,5 +101,5 @@ export function useRoomState(roomCode: RoomCode | null, playerName: string): Roo
     }
   }, [status]);
 
-  return { view, joinError, roomSettings };
+  return { view, joinError, villageSettings };
 }

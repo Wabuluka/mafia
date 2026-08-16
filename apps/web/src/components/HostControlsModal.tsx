@@ -3,14 +3,14 @@
 // ---------------------------------------------------------------------------
 // HostControlsModal — the host-only bottom sheet for adjusting phase
 // durations and removing a player. All of it is a thin UI over the
-// updateRoomSettings / kickPlayer socket events; server-side authorization
+// updateVillageSettings / kickPlayer socket events; server-side authorization
 // (host-only, lobby-only) is the actual enforcement — this modal simply
 // isn't rendered/reachable for a non-host, and every action still goes
 // through the normal ack/error path if it somehow were.
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react';
-import { DEFAULT_PHASE_DURATIONS_MS, type PlayerId, type PublicPlayer, type RoomCode } from '@mafia/shared';
+import { DEFAULT_PHASE_DURATIONS_MS, type PlayerId, type PublicPlayer, type VillageCode } from '@mafia/shared';
 import { ActionButton } from '@/components/ActionBar';
 import { Modal } from '@/components/Modal';
 import { useSocket } from '@/lib/socket-context';
@@ -19,7 +19,7 @@ import { useToast } from '@/components/Toast';
 export interface HostControlsModalProps {
   open: boolean;
   onClose: () => void;
-  roomCode: RoomCode;
+  villageCode: VillageCode;
   players: PublicPlayer[];
   selfPlayerId: PlayerId;
   currentDurationsMs: { NIGHT: number; DAY_DISCUSSION: number; DAY_VOTE: number };
@@ -74,7 +74,7 @@ function DurationRow({
 export function HostControlsModal({
   open,
   onClose,
-  roomCode,
+  villageCode,
   players,
   selfPlayerId,
   currentDurationsMs,
@@ -85,7 +85,7 @@ export function HostControlsModal({
   const [kickingId, setKickingId] = useState<PlayerId | null>(null);
 
   async function applyDurations() {
-    const result = await emit.updateRoomSettings({ roomCode, phaseDurationsMs: durations });
+    const result = await emit.updateVillageSettings({ villageCode, phaseDurationsMs: durations });
     if (result.ok) {
       toast.show('Phase durations updated.', { tone: 'success' });
     } else {
@@ -96,10 +96,10 @@ export function HostControlsModal({
 
   async function handleKick(playerId: PlayerId, name: string) {
     setKickingId(playerId);
-    const result = await emit.kickPlayer({ roomCode, targetPlayerId: playerId });
+    const result = await emit.kickPlayer({ villageCode, targetPlayerId: playerId });
     setKickingId(null);
     if (result.ok) {
-      toast.show(`${name} was removed from the room.`);
+      toast.show(`${name} was removed from the village.`);
     } else {
       toast.show(result.error.message, { tone: 'danger' });
     }

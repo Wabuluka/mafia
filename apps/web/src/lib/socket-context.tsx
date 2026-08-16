@@ -18,7 +18,7 @@
 //      before the cookie was ever set. `connect()` is idempotent and safe
 //      to call from any screen once it knows a session exists (every
 //      screen in this app that needs the socket already awaits
-//      createOrResumeSession() first — see useRoomState.ts / the lobby
+//      createOrResumeSession() first — see useVillageState.ts / the lobby
 //      page), so the ordering is enforced by the caller, not guessed at
 //      here.
 //   2. Reconnect with exponential backoff + jitter on an unexpected
@@ -26,11 +26,11 @@
 //      manager; this wraps it to also drive the `status` exposed to the
 //      UI and to layer resync-on-reconnect on top — see (3)).
 //   3. Resync on reconnect: the moment the socket comes back up after
-//      having been connected before, emit `requestResync` for the room the
+//      having been connected before, emit `requestResync` for the village the
 //      caller most recently joined, so a reconnecting client rebuilds its
 //      view from the server's current truth rather than trusting whatever
 //      stale state it had cached across the gap.
-//   4. Expose typed emit functions (`emit.joinRoom(...)`, etc.) instead of
+//   4. Expose typed emit functions (`emit.joinVillage(...)`, etc.) instead of
 //      a raw untyped `.emit(event, payload)` call, so a call-site typo or
 //      payload-shape mistake is a compile error.
 // ---------------------------------------------------------------------------
@@ -50,16 +50,16 @@ import type {
   AckResult,
   CastVotePayload,
   ClientToServerEvents,
-  JoinRoomPayload,
+  JoinVillagePayload,
   KickPlayerPayload,
-  LeaveRoomPayload,
-  RoomCode,
+  LeaveVillagePayload,
+  VillageCode,
   ServerToClientEvents,
   SendChatPayload,
   SetReadyPayload,
   StartGamePayload,
   SubmitNightActionPayload,
-  UpdateRoomSettingsPayload,
+  UpdateVillageSettingsPayload,
 } from '@mafia/shared';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
@@ -73,15 +73,15 @@ type Ack = (result: AckResult) => void;
  * than taking a callback, since every call site in this app awaits the
  * result rather than juggling a callback. */
 export interface TypedEmit {
-  joinRoom: (payload: JoinRoomPayload) => Promise<AckResult>;
-  leaveRoom: (payload: LeaveRoomPayload) => Promise<AckResult>;
+  joinVillage: (payload: JoinVillagePayload) => Promise<AckResult>;
+  leaveVillage: (payload: LeaveVillagePayload) => Promise<AckResult>;
   setReady: (payload: SetReadyPayload) => Promise<AckResult>;
   startGame: (payload: StartGamePayload) => Promise<AckResult>;
   submitNightAction: (payload: SubmitNightActionPayload) => Promise<AckResult>;
   castVote: (payload: CastVotePayload) => Promise<AckResult>;
   sendChat: (payload: SendChatPayload) => Promise<AckResult>;
   kickPlayer: (payload: KickPlayerPayload) => Promise<AckResult>;
-  updateRoomSettings: (payload: UpdateRoomSettingsPayload) => Promise<AckResult>;
+  updateVillageSettings: (payload: UpdateVillageSettingsPayload) => Promise<AckResult>;
 }
 
 export interface SocketContextValue {
@@ -92,10 +92,10 @@ export interface SocketContextValue {
    * already connected or already connecting. Callers should only invoke
    * this once a session cookie is known to exist (see the module header). */
   connect: () => void;
-  /** Tells the provider which room to resync on the next reconnect. Call
-   * this once a client has successfully joined a room; the provider has no
-   * other way to know which room's `requestResync` to fire. */
-  setActiveRoom: (roomCode: RoomCode | null) => void;
+  /** Tells the provider which village to resync on the next reconnect. Call
+   * this once a client has successfully joined a village; the provider has no
+   * other way to know which village's `requestResync` to fire. */
+  setActiveVillage: (villageCode: VillageCode | null) => void;
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null);
@@ -124,7 +124,7 @@ function emitWithAck<Payload>(
 export function SocketProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const socketRef = useRef<GameSocket | null>(null);
-  const activeRoomRef = useRef<RoomCode | null>(null);
+  const activeVillageRef = useRef<VillageCode | null>(null);
   const hasConnectedBeforeRef = useRef(false);
   // Force a re-render when the socket instance itself changes (on the
   // first `connect()` call, in practice) so consumers reading `socket`
@@ -167,9 +167,9 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       // Resync-on-reconnect: only fires when this is a RECONNECT (we were
       // connected before and dropped), not the very first connect — a
       // fresh connect has no prior state to reconcile against, and the
-      // room-join flow itself is what populates state the first time.
-      if (hasConnectedBeforeRef.current && activeRoomRef.current) {
-        socket.emit('requestResync', { roomCode: activeRoomRef.current });
+      // village-join flow itself is what populates state the first time.
+      if (hasConnectedBeforeRef.current && activeVillageRef.current) {
+        socket.emit('requestResync', { villageCode: activeVillageRef.current });
       }
       hasConnectedBeforeRef.current = true;
     });
@@ -206,21 +206,21 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const setActiveRoom = useCallback((roomCode: RoomCode | null) => {
-    activeRoomRef.current = roomCode;
+  const setActiveVillage = useCallback((villageCode: VillageCode | null) => {
+    activeVillageRef.current = villageCode;
   }, []);
 
   const emit = useMemo<TypedEmit>(
     () => ({
-      joinRoom: (payload) => emitWithAck(socketRef.current, 'joinRoom', payload),
-      leaveRoom: (payload) => emitWithAck(socketRef.current, 'leaveRoom', payload),
+      joinVillage: (payload) => emitWithAck(socketRef.current, 'joinVillage', payload),
+      leaveVillage: (payload) => emitWithAck(socketRef.current, 'leaveVillage', payload),
       setReady: (payload) => emitWithAck(socketRef.current, 'setReady', payload),
       startGame: (payload) => emitWithAck(socketRef.current, 'startGame', payload),
       submitNightAction: (payload) => emitWithAck(socketRef.current, 'submitNightAction', payload),
       castVote: (payload) => emitWithAck(socketRef.current, 'castVote', payload),
       sendChat: (payload) => emitWithAck(socketRef.current, 'sendChat', payload),
       kickPlayer: (payload) => emitWithAck(socketRef.current, 'kickPlayer', payload),
-      updateRoomSettings: (payload) => emitWithAck(socketRef.current, 'updateRoomSettings', payload),
+      updateVillageSettings: (payload) => emitWithAck(socketRef.current, 'updateVillageSettings', payload),
     }),
     // socketRef is a ref (stable identity) but its .current changes on
     // (re)connect; emit reads it lazily at call time, so this memo never
@@ -229,8 +229,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<SocketContextValue>(
-    () => ({ status, socket: socketRef.current, emit, connect, setActiveRoom }),
-    [status, emit, connect, setActiveRoom],
+    () => ({ status, socket: socketRef.current, emit, connect, setActiveVillage }),
+    [status, emit, connect, setActiveVillage],
   );
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;

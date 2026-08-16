@@ -2,16 +2,16 @@
 // castVote — validate -> pure engine call -> record pending event ->
 // broadcast redacted state. Unlike a night action, a vote's target is
 // public information (the point of a day vote is deliberation), so the
-// resulting state is broadcast to the whole room, not just the voter.
+// resulting state is broadcast to the whole village, not just the voter.
 // ---------------------------------------------------------------------------
 
 import { CastVotePayloadSchema } from '@mafia/shared';
 import { ABSTAIN, castVote } from '../../engine';
-import { broadcastStateToRoom, type GameServer, type GameSocket } from '../emit';
+import { broadcastStateToVillage, type GameServer, type GameSocket } from '../emit';
 import { ackError, ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
 import { isDuplicateAction } from '../idempotency';
 import { tryResolveEarly } from '../phaseLoop';
-import { roomManager } from '../RoomManager';
+import { villageManager } from '../VillageManager';
 
 function toErrorCode(reason: string): 'INVALID_PHASE' | 'INVALID_TARGET' | 'NOT_IN_GAME' {
   switch (reason) {
@@ -30,7 +30,7 @@ export function registerCastVoteHandler(io: GameServer, socket: GameSocket): voi
     const parsed = parseOrAck(CastVotePayloadSchema, payload, ack);
     if (!parsed) return;
 
-    const session = requireGameSession(parsed.roomCode, ack);
+    const session = requireGameSession(parsed.villageCode, ack);
     if (!session) return;
     if (!requirePlayerInSession(session, socket.player._id, ack)) return;
 
@@ -44,7 +44,7 @@ export function registerCastVoteHandler(io: GameServer, socket: GameSocket): voi
     const targetKey = parsed.targetId ?? 'ABSTAIN';
     const idempotencyKey = `vote:${socket.player._id}:${session.state.roundNumber}:${targetKey}`;
     if (isDuplicateAction(session, idempotencyKey)) {
-      broadcastStateToRoom(io, session.state);
+      broadcastStateToVillage(io, session.state);
       ackOk(ack);
       return;
     }
@@ -61,7 +61,7 @@ export function registerCastVoteHandler(io: GameServer, socket: GameSocket): voi
     }
 
     session.state = result.value;
-    roomManager.setState(session.roomCode, session.state);
+    villageManager.setState(session.villageCode, session.state);
 
     const recordedVote = session.state.votes.find(
       (v) => v.voterId === socket.player._id && v.dayNumber === session.state.roundNumber,
@@ -74,7 +74,7 @@ export function registerCastVoteHandler(io: GameServer, socket: GameSocket): voi
       });
     }
 
-    broadcastStateToRoom(io, session.state);
+    broadcastStateToVillage(io, session.state);
     ackOk(ack);
 
     // Skip the remaining wait if every living player has now voted (or

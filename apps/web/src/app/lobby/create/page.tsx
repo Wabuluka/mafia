@@ -1,20 +1,20 @@
 'use client';
 
 // ---------------------------------------------------------------------------
-// /lobby/create — not a screen a player lingers on; it creates a room via
+// /lobby/create — not a screen a player lingers on; it creates a village via
 // the HTTP API and immediately redirects into /lobby/[code]. Kept as its
 // own route (rather than doing this inline in the Home screen's button
-// handler) so the loading/error states around room creation have a place
+// handler) so the loading/error states around village creation have a place
 // to render without blocking Home's own layout.
 // ---------------------------------------------------------------------------
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
-import { ApiError, createOrResumeSession, createRoom } from '@/lib/api';
+import { ApiError, createOrResumeSession, createVillage } from '@/lib/api';
 import { useStoredName } from '@/lib/useStoredName';
 
-export default function CreateRoomPage() {
+export default function CreateVillagePage() {
   const router = useRouter();
   const [storedName] = useStoredName();
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +25,11 @@ export default function CreateRoomPage() {
     async function run() {
       try {
         await createOrResumeSession(storedName || undefined);
-        const room = await createRoom();
-        if (!cancelled) router.replace(`/lobby/${room.code}`);
+        const village = await createVillage();
+        if (!cancelled) router.replace(`/lobby/${village.code}`);
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof ApiError ? err.message : 'Could not create a room. Check your connection and try again.');
+        setError(err instanceof ApiError ? err.message : 'Could not create a village. Check your connection and try again.');
       }
     }
 
@@ -38,12 +38,12 @@ export default function CreateRoomPage() {
       cancelled = true;
     };
     // Runs once on mount; storedName is read at that moment (a name
-    // change after mount shouldn't re-trigger room creation).
+    // change after mount shouldn't re-trigger village creation).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   return (
-    <AppShell header={<div className="px-4 py-3"><h1 className="text-lg font-bold">Creating room…</h1></div>}>
+    <AppShell header={<div className="px-4 py-3"><h1 className="text-lg font-bold">Creating village…</h1></div>}>
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
         {error ? (
           <>

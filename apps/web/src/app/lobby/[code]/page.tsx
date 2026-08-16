@@ -4,7 +4,7 @@
 // /lobby/[code] — the live lobby: player list, ready toggles, shareable
 // code, computed role distribution, and (host-only) start/host-controls.
 // Handles: a game already in progress (redirected before ever opening a
-// socket, via the HTTP room check), the room filling up (Start disabled
+// socket, via the HTTP village check), the village filling up (Start disabled
 // with an explanatory reason, same as under-minimum), a player joining
 // mid-code-entry (impossible to observe as a distinct case client-side —
 // the roster simply grows live via `stateUpdate`, same as any other join),
@@ -15,17 +15,17 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { MIN_PLAYERS, RoomCodeSchema, type RoomCode } from '@mafia/shared';
+import { MIN_PLAYERS, VillageCodeSchema, type VillageCode } from '@mafia/shared';
 import { ActionBar, ActionButton } from '@/components/ActionBar';
 import { AppShell } from '@/components/AppShell';
 import { DEFAULT_LOBBY_DURATIONS_MS, HostControlsModal } from '@/components/HostControlsModal';
 import { PlayerTile } from '@/components/PlayerTile';
 import { RoleDistributionList } from '@/components/RoleDistributionList';
-import { ShareRoomCode } from '@/components/ShareRoomCode';
+import { ShareVillageCode } from '@/components/ShareVillageCode';
 import { useToast } from '@/components/Toast';
-import { ApiError, createOrResumeSession, getRoom } from '@/lib/api';
+import { ApiError, createOrResumeSession, getVillage } from '@/lib/api';
 import { useSocket } from '@/lib/socket-context';
-import { useRoomState } from '@/lib/useRoomState';
+import { useVillageState } from '@/lib/useVillageState';
 import { useStoredName } from '@/lib/useStoredName';
 
 type LoadState = { kind: 'loading' } | { kind: 'ready'; playerName: string } | { kind: 'error'; message: string };
@@ -40,17 +40,17 @@ export default function LobbyPage() {
   const [hostControlsOpen, setHostControlsOpen] = useState(false);
   const [starting, setStarting] = useState(false);
 
-  const parsedCode = RoomCodeSchema.safeParse((params.code ?? '').toUpperCase());
-  const roomCode: RoomCode | null = parsedCode.success ? parsedCode.data : null;
+  const parsedCode = VillageCodeSchema.safeParse((params.code ?? '').toUpperCase());
+  const villageCode: VillageCode | null = parsedCode.success ? parsedCode.data : null;
 
-  // Pre-flight over HTTP: confirms the room exists and is still joinable
+  // Pre-flight over HTTP: confirms the village exists and is still joinable
   // (not IN_GAME, not CLOSED) BEFORE ever opening a socket for it — a
   // "game already in progress" is caught right here with a clear message,
   // rather than the player watching a lobby UI that can never actually
   // start for them.
   useEffect(() => {
-    if (!roomCode) {
-      setLoad({ kind: 'error', message: 'That room code looks invalid.' });
+    if (!villageCode) {
+      setLoad({ kind: 'error', message: 'That village code looks invalid.' });
       return;
     }
 
@@ -58,15 +58,15 @@ export default function LobbyPage() {
     async function run() {
       try {
         await createOrResumeSession(storedName || undefined);
-        const room = await getRoom(roomCode as RoomCode);
+        const village = await getVillage(villageCode as VillageCode);
         if (cancelled) return;
 
-        if (room.status === 'IN_GAME') {
-          setLoad({ kind: 'error', message: 'This game has already started. Ask the host for a new room.' });
+        if (village.status === 'IN_GAME') {
+          setLoad({ kind: 'error', message: 'This game has already started. Ask the host for a new village.' });
           return;
         }
         if (!storedName) {
-          router.replace(`/name?next=${encodeURIComponent(`/lobby/${roomCode}`)}`);
+          router.replace(`/name?next=${encodeURIComponent(`/lobby/${villageCode}`)}`);
           return;
         }
         setLoad({ kind: 'ready', playerName: storedName });
@@ -74,7 +74,7 @@ export default function LobbyPage() {
         if (cancelled) return;
         setLoad({
           kind: 'error',
-          message: err instanceof ApiError ? err.message : 'Could not reach the room. Check your connection.',
+          message: err instanceof ApiError ? err.message : 'Could not reach the village. Check your connection.',
         });
       }
     }
@@ -82,22 +82,22 @@ export default function LobbyPage() {
     return () => {
       cancelled = true;
     };
-    // Deliberately runs once per roomCode/storedName pair at mount — not
+    // Deliberately runs once per villageCode/storedName pair at mount — not
     // on every socket status change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, storedName]);
+  }, [villageCode, storedName]);
 
   const playerName = load.kind === 'ready' ? load.playerName : '';
-  const { view, joinError, roomSettings } = useRoomState(load.kind === 'ready' ? roomCode : null, playerName);
+  const { view, joinError, villageSettings } = useVillageState(load.kind === 'ready' ? villageCode : null, playerName);
 
   // A game transitioning out of LOBBY while this player is already in the
   // lobby (the host started it) — leave for the in-game route.
   useEffect(() => {
-    if (view && view.phase !== 'LOBBY' && roomCode) {
+    if (view && view.phase !== 'LOBBY' && villageCode) {
       toast.show('The game has started!', { tone: 'success' });
-      router.push(`/game/${roomCode}`);
+      router.push(`/game/${villageCode}`);
     }
-  }, [view, toast, roomCode, router]);
+  }, [view, toast, villageCode, router]);
 
   useEffect(() => {
     if (joinError) toast.show(joinError, { tone: 'danger' });
@@ -120,21 +120,21 @@ export default function LobbyPage() {
   }, [view, playerCount]);
 
   async function handleReadyToggle() {
-    if (!view || !roomCode) return;
-    const result = await emit.setReady({ roomCode, isReady: !self?.isReady });
+    if (!view || !villageCode) return;
+    const result = await emit.setReady({ villageCode, isReady: !self?.isReady });
     if (!result.ok) toast.show(result.error.message, { tone: 'danger' });
   }
 
   async function handleStart() {
-    if (!roomCode) return;
+    if (!villageCode) return;
     setStarting(true);
-    const result = await emit.startGame({ roomCode });
+    const result = await emit.startGame({ villageCode });
     setStarting(false);
     if (!result.ok) toast.show(result.error.message, { tone: 'danger' });
   }
 
   async function handleLeave() {
-    if (roomCode) await emit.leaveRoom({ roomCode });
+    if (villageCode) await emit.leaveVillage({ villageCode });
     router.push('/');
   }
 
@@ -168,7 +168,7 @@ export default function LobbyPage() {
     );
   }
 
-  const joinUrl = typeof window !== 'undefined' ? `${window.location.origin}/join?code=${roomCode}` : '';
+  const joinUrl = typeof window !== 'undefined' ? `${window.location.origin}/join?code=${villageCode}` : '';
 
   return (
     <AppShell
@@ -215,7 +215,7 @@ export default function LobbyPage() {
       }
     >
       <div className="flex flex-col gap-6 px-4 py-6">
-        {roomCode && <ShareRoomCode code={roomCode} joinUrl={joinUrl} />}
+        {villageCode && <ShareVillageCode code={villageCode} joinUrl={joinUrl} />}
 
         <div>
           <div className="mb-2 flex items-baseline justify-between">
@@ -249,14 +249,14 @@ export default function LobbyPage() {
         <RoleDistributionList playerCount={playerCount} />
       </div>
 
-      {isHost && roomCode && view && (
+      {isHost && villageCode && view && (
         <HostControlsModal
           open={hostControlsOpen}
           onClose={() => setHostControlsOpen(false)}
-          roomCode={roomCode}
+          villageCode={villageCode}
           players={view.players}
           selfPlayerId={view.you.playerId}
-          currentDurationsMs={roomSettings ?? DEFAULT_LOBBY_DURATIONS_MS}
+          currentDurationsMs={villageSettings ?? DEFAULT_LOBBY_DURATIONS_MS}
         />
       )}
     </AppShell>

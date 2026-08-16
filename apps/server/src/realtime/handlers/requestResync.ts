@@ -16,7 +16,7 @@ export function registerRequestResyncHandler(io: GameServer, socket: GameSocket)
     const parsed = parseOrAck(RequestResyncPayloadSchema, payload, ack);
     if (!parsed) return;
 
-    const session = requireGameSession(parsed.roomCode, ack);
+    const session = requireGameSession(parsed.villageCode, ack);
     if (!session) return;
     if (!requirePlayerInSession(session, socket.player._id, ack)) return;
 

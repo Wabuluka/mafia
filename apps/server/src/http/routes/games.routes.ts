@@ -36,7 +36,7 @@ gamesRouter.get(
 
     res.status(200).json({
       gameId: game._id,
-      roomCode: game.roomCode,
+      villageCode: game.villageCode,
       endReason: game.endReason,
       winningTeam: game.winningTeam,
       startedAt: game.startedAt,

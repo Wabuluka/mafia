@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // Typed wrappers around the REST endpoints from the HTTP layer
-// (POST /api/session, POST /api/rooms, GET /api/rooms/:code,
-// POST /api/rooms/:code/join). `credentials: 'include'` on every call so
+// (POST /api/session, POST /api/villages, GET /api/villages/:code,
+// POST /api/villages/:code/join). `credentials: 'include'` on every call so
 // the signed httpOnly session cookie is sent/received — none of this ever
 // reads or writes the cookie itself, only the server can.
 // ---------------------------------------------------------------------------
 
-import type { RoomCode } from '@mafia/shared';
+import type { VillageCode } from '@mafia/shared';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -47,7 +47,7 @@ export interface SessionResponse {
 }
 
 /** Issues (or resumes, if a valid session cookie is already present) an
- * anonymous session. Always call this before joining/creating a room. */
+ * anonymous session. Always call this before joining/creating a village. */
 export function createOrResumeSession(displayName?: string): Promise<SessionResponse> {
   return request<SessionResponse>('/api/session', {
     method: 'POST',
@@ -55,27 +55,27 @@ export function createOrResumeSession(displayName?: string): Promise<SessionResp
   });
 }
 
-export interface RoomSummary {
-  code: RoomCode;
+export interface VillageSummary {
+  code: VillageCode;
   status: 'LOBBY' | 'IN_GAME' | 'CLOSED';
   playerCount: number;
   maxPlayers: number;
   minPlayers: number;
 }
 
-export function createRoom(input?: { minPlayers?: number; maxPlayers?: number }): Promise<RoomSummary> {
-  return request<RoomSummary>('/api/rooms', {
+export function createVillage(input?: { minPlayers?: number; maxPlayers?: number }): Promise<VillageSummary> {
+  return request<VillageSummary>('/api/villages', {
     method: 'POST',
     body: JSON.stringify(input ?? {}),
   });
 }
 
-export function getRoom(code: string): Promise<RoomSummary> {
-  return request<RoomSummary>(`/api/rooms/${code}`);
+export function getVillage(code: string): Promise<VillageSummary> {
+  return request<VillageSummary>(`/api/villages/${code}`);
 }
 
-export function joinRoomHttp(code: string): Promise<RoomSummary> {
-  return request<RoomSummary>(`/api/rooms/${code}/join`, {
+export function joinVillageHttp(code: string): Promise<VillageSummary> {
+  return request<VillageSummary>(`/api/villages/${code}/join`, {
     method: 'POST',
     body: JSON.stringify({}),
   });

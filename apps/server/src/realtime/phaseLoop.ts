@@ -23,16 +23,16 @@
 import { DEFAULT_PHASE_DURATIONS_MS } from '@mafia/shared';
 import type { FullGameState, Phase } from '@mafia/shared';
 import { checkJesterWin, checkWinCondition, resolveNight, resolveVote, type EngineEffect } from '../engine';
-import type { GameSession } from './RoomManager';
-import { roomManager } from './RoomManager';
-import { broadcastPhaseChange, broadcastStateToRoom, type GameServer } from './emit';
+import type { GameSession } from './VillageManager';
+import { villageManager } from './VillageManager';
+import { broadcastPhaseChange, broadcastStateToVillage, type GameServer } from './emit';
 import { isPhaseReadyToResolveEarly } from './earlyResolution';
 import { persistGameEnd, persistPhaseBoundary } from './persistence';
 import { clearDeadline, scheduleDeadline } from './scheduler';
 
 /** Resolves the actual duration to use for `phase` on this session: the
- * host's configured override if one was set (via updateRoomSettings —
- * LOBBY-only, locked in once the game starts, see RoomManager.ts), else
+ * host's configured override if one was set (via updateVillageSettings —
+ * LOBBY-only, locked in once the game starts, see VillageManager.ts), else
  * the shared default. LOBBY/GAME_OVER are never configurable (see
  * @mafia/shared's ConfigurablePhaseDurationKey) and always resolve to the
  * default (0, meaning "not timer-driven"). */
@@ -91,7 +91,7 @@ export function scheduleNextPhase(io: GameServer, session: GameSession, startedA
     ...session.state,
     phaseTimer: { phase: session.state.phase, startedAt: startedAtMs, endsAt, durationMs },
   };
-  roomManager.setState(session.roomCode, session.state);
+  villageManager.setState(session.villageCode, session.state);
 
   session.deadline = scheduleDeadline(endsAt, () => {
     void advancePhase(io, session);
@@ -163,7 +163,7 @@ export async function advancePhase(io: GameServer, session: GameSession): Promis
     ? { ...resolved, phase: 'GAME_OVER', endReason: winVerdict.reason, winningTeam: winVerdict.winningTeam, phaseTimer: undefined }
     : { ...resolved, phase: toPhase, roundNumber: toPhase === 'NIGHT' ? resolved.roundNumber + 1 : resolved.roundNumber };
 
-  roomManager.setState(session.roomCode, resolved);
+  villageManager.setState(session.villageCode, resolved);
 
   if (session.gameId) {
     if (isOver) {
@@ -188,7 +188,7 @@ export async function advancePhase(io: GameServer, session: GameSession): Promis
   broadcastPhaseChange(io, session.state, fromPhase, narration);
   // Re-broadcast full state too, so every player's `you` block (detective
   // results, hasActedThisPhase reset, etc) reflects the resolution.
-  broadcastStateToRoom(io, session.state);
+  broadcastStateToVillage(io, session.state);
 }
 
 function findPlayerDiedId(effects: EngineEffect[]) {

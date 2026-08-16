@@ -124,7 +124,7 @@ function buildPublicPlayer(state: FullGameState, playerId: PlayerId): PublicPlay
 
 /**
  * Which chat channels `viewerId` is entitled to see. LOBBY and DAY are
- * public to everyone in the room; MAFIA is restricted to living mafia
+ * public to everyone in the village; MAFIA is restricted to living mafia
  * members (mafia who died lose access, same as anyone else); DEAD is
  * restricted to players who are currently dead, so the living can't
  * eavesdrop on the dead chat.
@@ -152,7 +152,7 @@ export function redactStateFor(state: FullGameState, viewerId: PlayerId): Player
   const visibleChannels = new Set(visibleChannelsFor(state, viewerId));
 
   return {
-    roomCode: state.roomCode,
+    villageCode: state.villageCode,
     phase: state.phase,
     roundNumber: state.roundNumber,
     players: state.players.map((p) => buildPublicPlayer(state, p.id)),

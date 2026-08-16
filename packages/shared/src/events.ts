@@ -1,12 +1,29 @@
 import { z } from 'zod';
 import { PhaseSchema, RoleSchema } from './enums';
-import { PlayerIdSchema, RoomCodeSchema } from './entities';
+import { PlayerIdSchema, VillageCodeSchema } from './entities';
 import { PlayerViewSchema } from './game-state';
 
 // Phase durations a host can configure — LOBBY and GAME_OVER are never
 // timer-driven (see @mafia/shared's DEFAULT_PHASE_DURATIONS_MS), so they're
 // excluded from what's configurable rather than accepted and silently
 // ignored.
+
+// ---------------------------------------------------------------------------
+// Naming note (room -> village rename): event names that spelled out "room"
+// (joinRoom, leaveRoom, updateRoomSettings, roomSettingsUpdated) were
+// renamed to their village equivalents, not just the payload fields inside
+// them. Event names are part of the same public wire vocabulary as the
+// payload field names and error codes (ROOM_NOT_FOUND, etc.) — leaving them
+// mismatched (e.g. a `joinRoom` event carrying a `villageCode` field) would
+// be a worse, permanently-confusing outcome than the one-time churn of
+// renaming both client and server call sites together. The VILLAGER role
+// enum value was NOT renamed for the same "wire contract" reason but in the
+// opposite direction: it's a data value stored in MongoDB documents, not a
+// call site, so renaming it would require a DB migration rather than a
+// find-and-replace across in-repo call sites — see constants.ts/enums.ts
+// for the display-label mapping that covers the user-facing "Resident"
+// rename instead.
+// ---------------------------------------------------------------------------
 const CONFIGURABLE_PHASE_DURATION_KEYS = ['NIGHT', 'DAY_DISCUSSION', 'DAY_VOTE'] as const;
 
 // ---------------------------------------------------------------------------
@@ -17,67 +34,67 @@ const CONFIGURABLE_PHASE_DURATION_KEYS = ['NIGHT', 'DAY_DISCUSSION', 'DAY_VOTE']
 
 // --- Client -> Server payloads ---------------------------------------------
 
-export const JoinRoomPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+export const JoinVillagePayloadSchema = z.object({
+  villageCode: VillageCodeSchema,
   playerName: z.string().min(1).max(24),
 });
-export type JoinRoomPayload = z.infer<typeof JoinRoomPayloadSchema>;
+export type JoinVillagePayload = z.infer<typeof JoinVillagePayloadSchema>;
 
-export const LeaveRoomPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+export const LeaveVillagePayloadSchema = z.object({
+  villageCode: VillageCodeSchema,
 });
-export type LeaveRoomPayload = z.infer<typeof LeaveRoomPayloadSchema>;
+export type LeaveVillagePayload = z.infer<typeof LeaveVillagePayloadSchema>;
 
 export const SetReadyPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   isReady: z.boolean(),
 });
 export type SetReadyPayload = z.infer<typeof SetReadyPayloadSchema>;
 
 export const StartGamePayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
 });
 export type StartGamePayload = z.infer<typeof StartGamePayloadSchema>;
 
 export const SubmitNightActionPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   /** Omitted to represent an explicit no-target / skip action. */
   targetId: PlayerIdSchema.optional(),
 });
 export type SubmitNightActionPayload = z.infer<typeof SubmitNightActionPayloadSchema>;
 
 export const CastVotePayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   /** Omitted to represent an explicit abstain. */
   targetId: PlayerIdSchema.optional(),
 });
 export type CastVotePayload = z.infer<typeof CastVotePayloadSchema>;
 
 export const SendChatPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   body: z.string().min(1).max(500),
 });
 export type SendChatPayload = z.infer<typeof SendChatPayloadSchema>;
 
 export const RequestResyncPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
 });
 export type RequestResyncPayload = z.infer<typeof RequestResyncPayloadSchema>;
 
 export const KickPlayerPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+  villageCode: VillageCodeSchema,
   targetPlayerId: PlayerIdSchema,
 });
 export type KickPlayerPayload = z.infer<typeof KickPlayerPayloadSchema>;
 
 /** Host-only, lobby-only. Every key is optional so a host can tweak a
  * single phase's duration without having to resend all three; omitted
- * keys keep whatever the room already has (defaulting to
+ * keys keep whatever the village already has (defaulting to
  * DEFAULT_PHASE_DURATIONS_MS the first time). Bounds are generous but
  * finite — floor stops an accidental 0-length phase that could never be
  * acted in, ceiling stops an unbounded stall. */
-export const UpdateRoomSettingsPayloadSchema = z.object({
-  roomCode: RoomCodeSchema,
+export const UpdateVillageSettingsPayloadSchema = z.object({
+  villageCode: VillageCodeSchema,
   phaseDurationsMs: z
     .object({
       NIGHT: z.number().int().min(10_000).max(300_000).optional(),
@@ -86,7 +103,7 @@ export const UpdateRoomSettingsPayloadSchema = z.object({
     })
     .partial(),
 });
-export type UpdateRoomSettingsPayload = z.infer<typeof UpdateRoomSettingsPayloadSchema>;
+export type UpdateVillageSettingsPayload = z.infer<typeof UpdateVillageSettingsPayloadSchema>;
 export type ConfigurablePhaseDurationKey = (typeof CONFIGURABLE_PHASE_DURATION_KEYS)[number];
 
 // --- Server -> Client payloads ----------------------------------------------
@@ -152,19 +169,19 @@ export type PlayerLeftPayload = z.infer<typeof PlayerLeftPayloadSchema>;
 /** Broadcast whenever the host's chosen phase durations change, so every
  * lobby member's settings display stays in sync without needing to poll
  * or infer it from the next `stateUpdate` alone. */
-export const RoomSettingsUpdatedPayloadSchema = z.object({
+export const VillageSettingsUpdatedPayloadSchema = z.object({
   phaseDurationsMs: z.object({
     NIGHT: z.number().int().positive(),
     DAY_DISCUSSION: z.number().int().positive(),
     DAY_VOTE: z.number().int().positive(),
   }),
 });
-export type RoomSettingsUpdatedPayload = z.infer<typeof RoomSettingsUpdatedPayloadSchema>;
+export type VillageSettingsUpdatedPayload = z.infer<typeof VillageSettingsUpdatedPayloadSchema>;
 
 export const ErrorPayloadSchema = z.object({
   code: z.enum([
-    'ROOM_NOT_FOUND',
-    'ROOM_FULL',
+    'VILLAGE_NOT_FOUND',
+    'VILLAGE_FULL',
     'NAME_TAKEN',
     'NOT_HOST',
     'NOT_IN_GAME',
@@ -185,8 +202,8 @@ export type ErrorPayload = z.infer<typeof ErrorPayloadSchema>;
 // ---------------------------------------------------------------------------
 
 export interface ClientToServerEvents {
-  joinRoom: (payload: JoinRoomPayload, ack?: (result: AckResult) => void) => void;
-  leaveRoom: (payload: LeaveRoomPayload, ack?: (result: AckResult) => void) => void;
+  joinVillage: (payload: JoinVillagePayload, ack?: (result: AckResult) => void) => void;
+  leaveVillage: (payload: LeaveVillagePayload, ack?: (result: AckResult) => void) => void;
   setReady: (payload: SetReadyPayload, ack?: (result: AckResult) => void) => void;
   startGame: (payload: StartGamePayload, ack?: (result: AckResult) => void) => void;
   submitNightAction: (
@@ -200,8 +217,8 @@ export interface ClientToServerEvents {
     ack?: (result: AckResult) => void,
   ) => void;
   kickPlayer: (payload: KickPlayerPayload, ack?: (result: AckResult) => void) => void;
-  updateRoomSettings: (
-    payload: UpdateRoomSettingsPayload,
+  updateVillageSettings: (
+    payload: UpdateVillageSettingsPayload,
     ack?: (result: AckResult) => void,
   ) => void;
 }
@@ -214,7 +231,7 @@ export interface ServerToClientEvents {
   chatMessage: (payload: ChatMessagePayload) => void;
   playerJoined: (payload: PlayerJoinedPayload) => void;
   playerLeft: (payload: PlayerLeftPayload) => void;
-  roomSettingsUpdated: (payload: RoomSettingsUpdatedPayload) => void;
+  villageSettingsUpdated: (payload: VillageSettingsUpdatedPayload) => void;
   error: (payload: ErrorPayload) => void;
 }
 
@@ -231,5 +248,5 @@ export interface InterServerEvents {}
 
 export interface SocketData {
   playerId: string;
-  roomCode?: string;
+  villageCode?: string;
 }

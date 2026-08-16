@@ -1,25 +1,25 @@
 'use client';
 
 // ---------------------------------------------------------------------------
-// Join — 4-character room code entry. Validates the code exists (and is
+// Join — 4-character village code entry. Validates the code exists (and is
 // still joinable) via the HTTP join endpoint before ever opening a socket,
-// so "room already in progress" / "room full" / "no such room" all surface
-// as a clear inline message right here rather than after the player has
-// already been dropped into a broken lobby screen.
+// so "village already in progress" / "village full" / "no such village" all
+// surface as a clear inline message right here rather than after the player
+// has already been dropped into a broken lobby screen.
 // ---------------------------------------------------------------------------
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ActionBar, ActionButton } from '@/components/ActionBar';
 import { AppShell } from '@/components/AppShell';
-import { RoomCodeInput } from '@/components/RoomCodeInput';
-import { ApiError, createOrResumeSession, joinRoomHttp } from '@/lib/api';
+import { VillageCodeInput } from '@/components/VillageCodeInput';
+import { ApiError, createOrResumeSession, joinVillageHttp } from '@/lib/api';
 import { useStoredName } from '@/lib/useStoredName';
 
 const ERROR_MESSAGES: Record<string, string> = {
-  ROOM_NOT_FOUND: "That room code doesn't exist. Double-check it and try again.",
-  ROOM_FULL: 'This room is already full.',
-  GAME_IN_PROGRESS: 'This room already has a game in progress. Ask the host for a new code.',
+  VILLAGE_NOT_FOUND: "That village code doesn't exist. Double-check it and try again.",
+  VILLAGE_FULL: 'This village is already full.',
+  GAME_IN_PROGRESS: 'This village already has a game in progress. Ask the host for a new code.',
 };
 
 export default function JoinPage() {
@@ -36,11 +36,11 @@ export default function JoinPage() {
       await createOrResumeSession(storedName || undefined);
       // Joining while the code is still "being typed" isn't actually
       // reachable here — `onComplete` only fires once all 4 boxes are
-      // filled (see RoomCodeInput) — but a player pasting a partial code,
+      // filled (see VillageCodeInput) — but a player pasting a partial code,
       // or another tab racing a join, still goes through the same HTTP
       // check below rather than assuming the code is valid just because
       // the input is complete.
-      await joinRoomHttp(fullCode);
+      await joinVillageHttp(fullCode);
       router.push(`/lobby/${fullCode}`);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -66,7 +66,7 @@ export default function JoinPage() {
               <path d="M12 4l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <h1 className="text-lg font-bold">Join a room</h1>
+          <h1 className="text-lg font-bold">Join a village</h1>
         </div>
       }
       actionBar={
@@ -84,7 +84,7 @@ export default function JoinPage() {
       <div className="flex flex-col items-center gap-6 px-6 py-10">
         <p className="text-center text-base-content/60">Enter the 4-character code from your host</p>
 
-        <RoomCodeInput
+        <VillageCodeInput
           onComplete={(c) => {
             setCode(c);
             void handleComplete(c);

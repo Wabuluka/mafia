@@ -5,10 +5,10 @@
 // bundles), and a uniform way to reply with an AckResult.
 // ---------------------------------------------------------------------------
 
-import type { AckResult, ErrorPayload, PlayerId, RoomCode } from '@mafia/shared';
+import type { AckResult, ErrorPayload, PlayerId, VillageCode } from '@mafia/shared';
 import type { ZodTypeAny, z } from 'zod';
-import type { GameSession } from './RoomManager';
-import { roomManager } from './RoomManager';
+import type { GameSession } from './VillageManager';
+import { villageManager } from './VillageManager';
 import type { GameServer } from './emit';
 
 export interface HandlerAck {
@@ -38,14 +38,14 @@ export function ackError(ack: HandlerAck | undefined, error: ErrorPayload): void
   ack?.({ ok: false, error });
 }
 
-/** Looks up the in-memory session for a room code, acking a consistent
- * ROOM_NOT_FOUND if it isn't currently active. Every handler that operates
+/** Looks up the in-memory session for a village code, acking a consistent
+ * VILLAGE_NOT_FOUND if it isn't currently active. Every handler that operates
  * on an existing game goes through this rather than re-checking
- * `roomManager.get(...)` inline. */
-export function requireGameSession(roomCode: RoomCode, ack: HandlerAck | undefined): GameSession | undefined {
-  const session = roomManager.get(roomCode);
+ * `villageManager.get(...)` inline. */
+export function requireGameSession(villageCode: VillageCode, ack: HandlerAck | undefined): GameSession | undefined {
+  const session = villageManager.get(villageCode);
   if (!session) {
-    ackError(ack, { code: 'ROOM_NOT_FOUND', message: `No active room with code ${roomCode}.` });
+    ackError(ack, { code: 'VILLAGE_NOT_FOUND', message: `No active village with code ${villageCode}.` });
     return undefined;
   }
   return session;

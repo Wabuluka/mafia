@@ -7,10 +7,10 @@
 // ---------------------------------------------------------------------------
 
 import type { Db } from 'mongodb';
-import { gameEventsValidator, gamesValidator, playersValidator, roomsValidator } from './schemas';
+import { gameEventsValidator, gamesValidator, playersValidator, villagesValidator } from './schemas';
 
 export const COLLECTIONS = {
-  rooms: 'rooms',
+  villages: 'villages',
   games: 'games',
   gameEvents: 'gameEvents',
   players: 'players',
@@ -29,7 +29,7 @@ async function ensureCollection(db: Db, name: string, validator: object): Promis
 
 export async function ensureCollections(db: Db): Promise<void> {
   await Promise.all([
-    ensureCollection(db, COLLECTIONS.rooms, roomsValidator),
+    ensureCollection(db, COLLECTIONS.villages, villagesValidator),
     ensureCollection(db, COLLECTIONS.games, gamesValidator),
     ensureCollection(db, COLLECTIONS.gameEvents, gameEventsValidator),
     ensureCollection(db, COLLECTIONS.players, playersValidator),
@@ -43,38 +43,38 @@ export async function ensureCollections(db: Db): Promise<void> {
  * added without a stated reason.
  */
 async function ensureIndexes(db: Db): Promise<void> {
-  const rooms = db.collection(COLLECTIONS.rooms);
+  const villages = db.collection(COLLECTIONS.villages);
   const games = db.collection(COLLECTIONS.games);
   const gameEvents = db.collection(COLLECTIONS.gameEvents);
   const players = db.collection(COLLECTIONS.players);
 
   await Promise.all([
-    // --- rooms ---------------------------------------------------------
-    // Unique index on the room code: MongoDB already enforces this for
-    // free, because the room code IS `_id` (see types.ts) and every
+    // --- villages ---------------------------------------------------------
+    // Unique index on the village code: MongoDB already enforces this for
+    // free, because the village code IS `_id` (see types.ts) and every
     // collection's `_id` field has a mandatory, automatically-created
     // unique index — attempting to declare it explicitly is actually
     // rejected by the server ("not valid for an _id index specification").
     // Documented here, with no createIndex call, so the guarantee ("two
-    // live rooms can never share a code") isn't implicit tribal knowledge.
-    // If room codes ever move off `_id` onto a separate `code` field, this
-    // becomes a real `rooms.createIndex({ code: 1 }, { unique: true })`.
+    // live villages can never share a code") isn't implicit tribal knowledge.
+    // If village codes ever move off `_id` onto a separate `code` field,
+    // this becomes a real `villages.createIndex({ code: 1 }, { unique: true })`.
 
-    // TTL index: abandoned rooms (never started, or a lobby left open)
+    // TTL index: abandoned villages (never started, or a lobby left open)
     // self-delete 4 hours after their last activity. Without this, dead
     // lobbies accumulate forever. `lastActivityAt` is bumped on join,
     // ready-toggle, and game start, so an active lobby's TTL keeps
-    // resetting; only a genuinely idle room expires.
-    rooms.createIndex(
+    // resetting; only a genuinely idle village expires.
+    villages.createIndex(
       { lastActivityAt: 1 },
-      { expireAfterSeconds: 4 * 60 * 60, name: 'ttl_abandoned_rooms' },
+      { expireAfterSeconds: 4 * 60 * 60, name: 'ttl_abandoned_villages' },
     ),
 
     // --- games -----------------------------------------------------------
-    // Lookup "all games ever played in this room" (e.g. rematch history) —
-    // not hot-path, but common enough on a room's post-game screen to
+    // Lookup "all games ever played in this village" (e.g. rematch history)
+    // — not hot-path, but common enough on a village's post-game screen to
     // deserve an index rather than a collection scan.
-    games.createIndex({ roomCode: 1, startedAt: -1 }, { name: 'by_room_recent' }),
+    games.createIndex({ villageCode: 1, startedAt: -1 }, { name: 'by_village_recent' }),
     games.createIndex({ status: 1 }, { name: 'by_status' }),
 
     // --- gameEvents ------------------------------------------------------

@@ -2,7 +2,7 @@
 
 // ---------------------------------------------------------------------------
 // /game/[code] — the live in-game screen. Confirms (over HTTP, before ever
-// opening a socket) that the room actually has a game IN_GAME; if it's
+// opening a socket) that the village actually has a game IN_GAME; if it's
 // still LOBBY, sends the player back there instead of showing a broken
 // in-game shell for a game that hasn't started. Once joined, the actual
 // phase-specific screen is chosen from `view.phase` — this pass only
@@ -13,12 +13,12 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { RoomCodeSchema, type RoomCode } from '@mafia/shared';
+import { VillageCodeSchema, type VillageCode } from '@mafia/shared';
 import { AppShell } from '@/components/AppShell';
 import { NightPhase } from '@/components/night/NightPhase';
 import { useToast } from '@/components/Toast';
-import { ApiError, createOrResumeSession, getRoom } from '@/lib/api';
-import { useRoomState } from '@/lib/useRoomState';
+import { ApiError, createOrResumeSession, getVillage } from '@/lib/api';
+import { useVillageState } from '@/lib/useVillageState';
 import { useStoredName } from '@/lib/useStoredName';
 
 type LoadState = { kind: 'loading' } | { kind: 'ready'; playerName: string } | { kind: 'error'; message: string };
@@ -30,16 +30,16 @@ export default function GamePage() {
   const [storedName] = useStoredName();
   const [load, setLoad] = useState<LoadState>({ kind: 'loading' });
 
-  const parsedCode = RoomCodeSchema.safeParse((params.code ?? '').toUpperCase());
-  const roomCode: RoomCode | null = parsedCode.success ? parsedCode.data : null;
+  const parsedCode = VillageCodeSchema.safeParse((params.code ?? '').toUpperCase());
+  const villageCode: VillageCode | null = parsedCode.success ? parsedCode.data : null;
 
   useEffect(() => {
-    if (!roomCode) {
-      setLoad({ kind: 'error', message: 'That room code looks invalid.' });
+    if (!villageCode) {
+      setLoad({ kind: 'error', message: 'That village code looks invalid.' });
       return;
     }
     if (!storedName) {
-      router.replace(`/name?next=${encodeURIComponent(`/game/${roomCode}`)}`);
+      router.replace(`/name?next=${encodeURIComponent(`/game/${villageCode}`)}`);
       return;
     }
 
@@ -47,15 +47,15 @@ export default function GamePage() {
     async function run() {
       try {
         await createOrResumeSession(storedName || undefined);
-        const room = await getRoom(roomCode as RoomCode);
+        const village = await getVillage(villageCode as VillageCode);
         if (cancelled) return;
 
-        if (room.status === 'LOBBY') {
-          router.replace(`/lobby/${roomCode}`);
+        if (village.status === 'LOBBY') {
+          router.replace(`/lobby/${villageCode}`);
           return;
         }
-        if (room.status === 'CLOSED') {
-          setLoad({ kind: 'error', message: 'This room no longer exists.' });
+        if (village.status === 'CLOSED') {
+          setLoad({ kind: 'error', message: 'This village no longer exists.' });
           return;
         }
         setLoad({ kind: 'ready', playerName: storedName });
@@ -72,10 +72,10 @@ export default function GamePage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode, storedName]);
+  }, [villageCode, storedName]);
 
   const playerName = load.kind === 'ready' ? load.playerName : '';
-  const { view, joinError } = useRoomState(load.kind === 'ready' ? roomCode : null, playerName);
+  const { view, joinError } = useVillageState(load.kind === 'ready' ? villageCode : null, playerName);
 
   useEffect(() => {
     if (joinError) toast.show(joinError, { tone: 'danger' });

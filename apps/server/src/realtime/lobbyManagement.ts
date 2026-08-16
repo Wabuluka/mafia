@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Shared lobby-management helpers used by more than one handler: host
-// transfer, and the room-code-scoped "which player should inherit host"
-// rule. Kept out of any single handler file since leaveRoom.ts and
+// transfer, and the village-code-scoped "which player should inherit host"
+// rule. Kept out of any single handler file since leaveVillage.ts and
 // disconnect.ts both need the exact same transfer logic and must never
 // drift into two subtly different rules for "who becomes host next".
 // ---------------------------------------------------------------------------
@@ -15,7 +15,7 @@ import type { FullGameState, Player } from '@mafia/shared';
  * A disconnected player is skipped even if they joined first — handing
  * host to someone who isn't there to use it would just strand the lobby
  * on a different unreachable host. Returns `undefined` if nobody
- * qualifies (empty room, or everyone remaining is disconnected), in which
+ * qualifies (empty village, or everyone remaining is disconnected), in which
  * case the caller keeps the lobby hostless until someone reconnects/joins.
  */
 export function pickNextHost(remainingPlayers: readonly Player[]): Player | undefined {

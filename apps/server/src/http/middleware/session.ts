@@ -50,7 +50,7 @@ export function setSessionCookie(res: Response, token: string): void {
  * Best-effort session resolution: if a valid, signed session cookie is
  * present and resolves to a known player, attaches it to `req.player`.
  * Never rejects the request — routes that don't require a session (e.g.
- * GET /api/rooms/:code) can still run for an anonymous, session-less
+ * GET /api/villages/:code) can still run for an anonymous, session-less
  * visitor. Routes that DO require a session use `requireSession` below.
  */
 export async function attachSession(req: Request, _res: Response, next: NextFunction): Promise<void> {
@@ -73,7 +73,7 @@ export async function attachSession(req: Request, _res: Response, next: NextFunc
 }
 
 /** Route guard for endpoints that require an established anonymous
- * session (e.g. creating a room). Throws a typed 401 via AppError, caught
+ * session (e.g. creating a village). Throws a typed 401 via AppError, caught
  * by the centralized error handler, rather than each route re-implementing
  * the same check. */
 export function requireSession(req: Request, _res: Response, next: NextFunction): void {

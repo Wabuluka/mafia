@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 // This layer is NOT on the gameplay hot path. The authoritative state of a
 // running game is an in-memory `FullGameState` (see @mafia/shared) owned by
-// the game engine, one instance per active room. Every socket event that
+// the game engine, one instance per active village. Every socket event that
 // happens *during* a phase — a night action submission, a vote, a chat
 // message — mutates that in-memory state directly and broadcasts the result
 // immediately. None of those individual actions triggers a MongoDB write.
@@ -20,7 +20,7 @@
 //          that just ended.
 //   2. Game end — `completeGame` (or `abandonGame`) plus a final
 //      `appendEvents` flush.
-//   3. Lobby lifecycle — room creation, join/leave, ready toggles. These
+//   3. Lobby lifecycle — village creation, join/leave, ready toggles. These
 //      are comparatively rare (human-paced, not per-tick) so writing them
 //      as they happen is fine; they never happen inside a timed phase loop.
 //
@@ -41,13 +41,13 @@
 export { getDb, closeDb, registerGracefulShutdown } from './connection';
 export { ensureCollections, COLLECTIONS } from './collections';
 export type {
-  RoomDocument,
+  VillageDocument,
   GameDocument,
   GameEventDocument,
   PlayerDocument,
 } from './types';
 
-export * as roomsRepository from './repositories/rooms.repository';
+export * as villagesRepository from './repositories/villages.repository';
 export * as gamesRepository from './repositories/games.repository';
 export * as gameEventsRepository from './repositories/game-events.repository';
 export * as playersRepository from './repositories/players.repository';

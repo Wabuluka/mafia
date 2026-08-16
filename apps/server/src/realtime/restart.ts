@@ -10,17 +10,17 @@
 // shutdown always reaches GAME_OVER or explicitly abandons first (see
 // gracefulShutdown below). For each such game:
 //
-//   RESUME if — and only if — its room is still found with status
-//   'IN_GAME' in Mongo. The room record carries the player roster
+//   RESUME if — and only if — its village is still found with status
+//   'IN_GAME' in Mongo. The village record carries the player roster
 //   (`playerIds`) and host id that a resumed in-memory GameSession needs
 //   to reconstruct a `FullGameState` shell; without it there is no lobby
 //   left to attach reconnecting sockets to, and no way to know who is
 //   even still supposed to be in this game.
 //
-//   ABANDON in every other case: the room record is missing entirely (its
+//   ABANDON in every other case: the village record is missing entirely (its
 //   TTL index — see db/collections.ts — already reaped it, meaning it's
 //   been untouched for 4+ hours, plenty long enough that resuming would
-//   reunite nobody), or the room's status is anything other than
+//   reunite nobody), or the village's status is anything other than
 //   'IN_GAME' (it was explicitly closed, or never promoted past LOBBY,
 //   which shouldn't happen for a game that has a GameDocument at all, but
 //   is treated as "can't resume" rather than assumed impossible).
@@ -40,10 +40,10 @@
 // ---------------------------------------------------------------------------
 
 import { brandFullGameState, type FullGameState, type Player } from '@mafia/shared';
-import { gamesRepository, roomsRepository } from '../db';
+import { gamesRepository, villagesRepository } from '../db';
 import type { GameDocument } from '../db/types';
-import { roomManager, type GameSession } from './RoomManager';
-import { broadcastStateToRoom, type GameServer } from './emit';
+import { villageManager, type GameSession } from './VillageManager';
+import { broadcastStateToVillage, type GameServer } from './emit';
 import { scheduleNextPhase } from './phaseLoop';
 import { persistGameAbandoned } from './persistence';
 
@@ -65,7 +65,7 @@ function reconstructState(game: GameDocument): FullGameState {
   }));
 
   return brandFullGameState({
-    roomCode: game.roomCode,
+    villageCode: game.villageCode,
     phase: game.currentPhase,
     roundNumber: game.roundNumber,
     players,
@@ -90,19 +90,19 @@ export async function recoverInProgressGames(io: GameServer): Promise<{ resumed:
   let abandoned = 0;
 
   for (const game of inProgressGames) {
-    const room = await roomsRepository.findRoomByCode(game.roomCode);
+    const village = await villagesRepository.findVillageByCode(game.villageCode);
 
-    if (!room || room.status !== 'IN_GAME') {
+    if (!village || village.status !== 'IN_GAME') {
       await persistGameAbandoned(game._id);
       abandoned += 1;
       // eslint-disable-next-line no-console
-      console.warn(`[restart] abandoned game ${game._id} (room ${game.roomCode}): ${!room ? 'room not found' : `room status is ${room.status}`}`);
+      console.warn(`[restart] abandoned game ${game._id} (village ${game.villageCode}): ${!village ? 'village not found' : `village status is ${village.status}`}`);
       continue;
     }
 
     const state = reconstructState(game);
     const session: GameSession = {
-      roomCode: game.roomCode,
+      villageCode: game.villageCode,
       gameId: game._id,
       state,
       sockets: new Map(),
@@ -116,16 +116,16 @@ export async function recoverInProgressGames(io: GameServer): Promise<{ resumed:
       // restore here even in principle.
       phaseDurationOverridesMs: {},
     };
-    roomManager.create(session);
+    villageManager.create(session);
 
     // Restart the current phase from scratch with a full-duration timer —
     // see the module header for why no partial time is carried over.
     scheduleNextPhase(io, session, Date.now());
-    broadcastStateToRoom(io, session.state);
+    broadcastStateToVillage(io, session.state);
 
     resumed += 1;
     // eslint-disable-next-line no-console
-    console.log(`[restart] resumed game ${game._id} (room ${game.roomCode}) at phase ${game.currentPhase}`);
+    console.log(`[restart] resumed game ${game._id} (village ${game.villageCode}) at phase ${game.currentPhase}`);
   }
 
   // eslint-disable-next-line no-console
@@ -143,13 +143,13 @@ export async function recoverInProgressGames(io: GameServer): Promise<{ resumed:
  * path to sort it out later.
  */
 export async function abandonAllActiveGames(): Promise<void> {
-  const sessions = [...roomManager.all()];
+  const sessions = [...villageManager.all()];
   await Promise.all(
     sessions
       .filter((s): s is GameSession & { gameId: string } => Boolean(s.gameId))
       .map((s) => persistGameAbandoned(s.gameId)),
   );
   for (const session of sessions) {
-    roomManager.delete(session.roomCode);
+    villageManager.delete(session.villageCode);
   }
 }
