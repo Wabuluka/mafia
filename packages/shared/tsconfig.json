@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // No path alias needed inside the shared package itself — it doesn't
+    // import from @mafia/shared, it *is* @mafia/shared.
+    "paths": {}
+  },
+  "include": ["src"]
+}

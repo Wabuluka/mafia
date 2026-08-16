@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Base layer: viewport locking, safe areas, motion preferences, and the
+ * iOS input-zoom fix. See tailwind.config.ts for the color/typography/
+ * spacing token definitions this file assumes.
+ * ------------------------------------------------------------------------- */
+
+@layer base {
+  html {
+    /* 100dvh already handles the URL-bar resize problem (see
+     * tailwind.config.ts's height.dvh) for elements that opt in with
+     * `h-dvh`; this fallback keeps `html`/`body` themselves from ever
+     * reporting a taller-than-visible layout height on browsers that
+     * don't yet support dvh (falls back to the old, imperfect 100vh). */
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  body {
+    @apply bg-surface text-base-content;
+    height: 100vh;
+    height: 100dvh;
+    /* The whole app is a fixed-viewport shell (see AppShell.tsx) — body
+     * itself never scrolls; only the shell's content region does. This
+     * prevents the classic mobile bug where BOTH the page and an inner
+     * scroll container scroll independently. */
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  /* Every form control gets a 16px floor (Tailwind's `text-base`, see the
+   * type scale) as a HARD rule here, not just a convention components are
+   * expected to follow — iOS Safari zooms the viewport on focus for any
+   * input/select/textarea with a computed font-size under 16px, which on a
+   * fixed-viewport shell is jarring and can strand the layout zoomed. This
+   * is the actual enforcement point; the type scale in tailwind.config.ts
+   * just makes 16px the natural choice everywhere else too. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion: every animation this app defines (see tailwind.config.ts's
+ * `animation`/`keyframes`) is transform/opacity only, so disabling them
+ * under reduced-motion never leaves a layout mid-transition — components
+ * just render in their end state instantly.
+ * ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
