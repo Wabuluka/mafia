@@ -40,7 +40,7 @@ const NOUNS = [
 ];
 
 function pick(list: readonly string[]): string {
-  return list[randomInt(list.length)]!;
+  return list[randomInt(list.length)] ?? list[0];
 }
 
 /** Generates a whimsical two-word default village name, e.g. "Shadowy

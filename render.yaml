@@ -1,0 +1,43 @@
+# Render blueprint for the Mafia backend (apps/server).
+#
+# This defines the service config only. Deploys are triggered by the
+# GitHub Actions workflow (.github/workflows/deploy.yml) via a Deploy Hook
+# after CI passes — NOT by Render's own auto-deploy-on-push, which is
+# disabled below so a red build never ships.
+#
+# First-time setup:
+#   1. Render Dashboard -> New -> Blueprint -> pick this repo. Render reads
+#      this file and creates the service.
+#   2. Fill in the `sync: false` env vars (MONGO_URI, WEB_ORIGIN) in the
+#      dashboard. SESSION_SECRET / METRICS_TOKEN are generated once by
+#      Render and then persist.
+#   3. Settings -> Deploy Hook: copy the URL into the GitHub repo secret
+#      RENDER_DEPLOY_HOOK_URL.
+services:
+  - type: web
+    name: mafia-server
+    runtime: docker
+    dockerfilePath: apps/server/Dockerfile
+    # The Dockerfile's build context MUST be the repo root (npm workspaces).
+    dockerContext: .
+    plan: starter
+    region: oregon
+    branch: main
+    # CI gates the deploy; don't let Render deploy on raw push.
+    autoDeploy: false
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      # Exact origin of the deployed frontend, no trailing slash. CORS and
+      # the cross-site session cookie both string-match this.
+      - key: WEB_ORIGIN
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: METRICS_TOKEN
+        generateValue: true

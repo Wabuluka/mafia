@@ -78,8 +78,8 @@ describe('pauseCurrentPhase / resumeCurrentPhase', () => {
     expect(session.pausedRemainingMs).toBeUndefined();
     expect(session.deadline).toBeDefined();
     // endsAt should be ~now + 5000, not the original 100_000 far-future value.
-    expect(session.state.phaseTimer!.endsAt).toBeGreaterThanOrEqual(before + 5_000);
-    expect(session.state.phaseTimer!.endsAt).toBeLessThanOrEqual(after + 5_000);
+    expect(session.state.phaseTimer?.endsAt).toBeGreaterThanOrEqual(before + 5_000);
+    expect(session.state.phaseTimer?.endsAt).toBeLessThanOrEqual(after + 5_000);
 
     if (session.deadline) clearTimeout(session.deadline.handle);
   });

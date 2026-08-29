@@ -1,0 +1,74 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Lint · Typecheck · Test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # @mafia/shared ships raw TS; build it first so typecheck/build of the
+      # apps can resolve its compiled dist/ (mirrors root `npm run build`).
+      - run: npm run build -w packages/shared
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build -w apps/server
+      - run: npm run build -w apps/web
+        env:
+          # Build-time inlined; real values come from Vercel on the actual
+          # deploy. Dummies here just let `next build` succeed.
+          NEXT_PUBLIC_API_URL: https://example.com
+          NEXT_PUBLIC_SOCKET_URL: https://example.com
+
+  deploy-server:
+    name: Deploy server (Render)
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+  deploy-web:
+    name: Deploy web (Vercel)
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Deploy to Vercel
+        run: |
+          npm i -g vercel@latest
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
