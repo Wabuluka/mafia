@@ -63,6 +63,7 @@ jobs:
           cache: npm
 
       - name: Deploy to Vercel
+        working-directory: apps/web
         run: |
           npm i -g vercel@latest
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
