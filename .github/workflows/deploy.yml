@@ -34,16 +34,14 @@ jobs:
       - run: npm run build -w apps/server
       - run: npm run build -w apps/web
         env:
-          # The real deploy sets API_ORIGIN on the Render mafia-web service
-          # (dashboard), pointing at the Render backend, e.g.
-          #   API_ORIGIN=https://mafia-server-lz15.onrender.com
-          # next.config.mjs rewrites /api and /socket.io through it so the
-          # session cookie stays first-party. A dummy here just lets
+          # The real deploy bakes API_ORIGIN=http://127.0.0.1:4000 into the
+          # image (repo-root Dockerfile) since Next proxies /api and
+          # /socket.io to the co-located server. A dummy here just lets
           # `next build` succeed in CI.
           API_ORIGIN: https://example.com
 
-  deploy-server:
-    name: Deploy server (Render)
+  deploy:
+    name: Deploy (Render)
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -51,13 +49,3 @@ jobs:
       - name: Trigger Render deploy
         run: |
           curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
-
-  deploy-web:
-    name: Deploy web (Render)
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Render deploy
-        run: |
-          curl -fsS -X POST "${{ secrets.RENDER_WEB_DEPLOY_HOOK_URL }}"

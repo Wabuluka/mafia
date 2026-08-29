@@ -1,46 +1,49 @@
-# Render blueprint for the Mafia app: the backend (apps/server) and the
-# Next.js frontend (apps/web), both as Docker web services.
+# Render blueprint for the Mafia app — ONE service, ONE container running
+# BOTH apps (see the repo-root Dockerfile + docker-entrypoint.sh):
 #
-# This defines the service config only. Deploys are triggered by the
-# GitHub Actions workflow (.github/workflows/deploy.yml) via per-service
-# Deploy Hooks after CI passes — NOT by Render's own auto-deploy-on-push,
-# which is disabled below so a red build never ships.
+#   - apps/web (Next.js) on the public $PORT Render provides.
+#   - apps/server (Express + Socket.IO) on an internal port; Next's
+#     /api and /socket.io rewrites proxy to it, so the browser only ever
+#     sees this one origin and the session cookie stays first-party.
+#
+# Deploys are triggered by the GitHub Actions workflow
+# (.github/workflows/deploy.yml) via a Deploy Hook after CI passes — NOT by
+# Render's own auto-deploy-on-push, disabled below so a red build never ships.
 #
 # First-time setup:
-#   1. Render Dashboard -> New -> Blueprint -> pick this repo. Render reads
-#      this file and creates BOTH services.
+#   1. Render Dashboard -> New -> Blueprint -> pick this repo.
 #   2. Fill in the `sync: false` env vars in the dashboard:
-#        mafia-server: MONGO_URI, WEB_ORIGIN
-#        mafia-web:    API_ORIGIN  (https URL of the mafia-server service,
-#                                   no trailing slash)
+#        MONGO_URI    — MongoDB connection string.
+#        WEB_ORIGIN   — the public https URL of THIS service, no trailing
+#                       slash (CORS + the session cookie string-match it).
 #      SESSION_SECRET / METRICS_TOKEN are generated once by Render and persist.
-#   3. For EACH service: Settings -> Deploy Hook. Copy the URLs into the
-#      GitHub repo secrets RENDER_DEPLOY_HOOK_URL (server) and
-#      RENDER_WEB_DEPLOY_HOOK_URL (web).
+#   3. Settings -> Deploy Hook: copy the URL into the GitHub repo secret
+#      RENDER_DEPLOY_HOOK_URL.
 #
-# NOTE: API_ORIGIN is consumed at BUILD time by apps/web/next.config.mjs
-# (baked into the rewrites), so changing it in the dashboard requires a
-# fresh deploy, not just a restart.
+# API_ORIGIN is NOT set here — it's baked to http://127.0.0.1:4000 at image
+# build time (Dockerfile) since it only ever points at the co-located server.
 services:
   - type: web
-    name: mafia-server
+    name: mafia
     runtime: docker
-    dockerfilePath: apps/server/Dockerfile
-    # The Dockerfile's build context MUST be the repo root (npm workspaces).
+    dockerfilePath: Dockerfile
+    # Build context MUST be the repo root (npm workspaces).
     dockerContext: .
     plan: starter
     region: oregon
     branch: main
     # CI gates the deploy; don't let Render deploy on raw push.
     autoDeploy: false
-    healthCheckPath: /health
+    # Next serves this; it 200s once both processes are up.
+    healthCheckPath: /
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
+      # Internal port for apps/server. Render still injects PORT for the
+      # public web process; the entrypoint keeps them separate.
+      - key: SERVER_PORT
         value: 4000
-      # Exact origin of the deployed frontend, no trailing slash. CORS and
-      # the cross-site session cookie both string-match this.
+      # Public https origin of THIS service, no trailing slash.
       - key: WEB_ORIGIN
         sync: false
       - key: MONGO_URI
@@ -49,26 +52,3 @@ services:
         generateValue: true
       - key: METRICS_TOKEN
         generateValue: true
-
-  - type: web
-    name: mafia-web
-    runtime: docker
-    dockerfilePath: apps/web/Dockerfile
-    # Build context MUST be the repo root (npm workspaces).
-    dockerContext: .
-    plan: starter
-    region: oregon
-    branch: main
-    # CI gates the deploy; don't let Render deploy on raw push.
-    autoDeploy: false
-    healthCheckPath: /
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: PORT
-        value: 3000
-      # https origin of the mafia-server service, no trailing slash.
-      # next.config.mjs bakes this into the /api and /socket.io rewrites at
-      # build time so the session cookie stays first-party.
-      - key: API_ORIGIN
-        sync: false
