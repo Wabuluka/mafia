@@ -191,7 +191,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const dynamicImportInFlightRef = useRef(false);
 
   const createSocket = useCallback((io: typeof import('socket.io-client').io) => {
-    const url = process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000';
+    // Same-origin by default: connect to this page's origin and let the
+    // Next.js rewrite for /socket.io/* (see next.config.mjs) proxy the
+    // handshake + WS upgrade to the real backend, keeping the session
+    // cookie first-party. NEXT_PUBLIC_SOCKET_URL overrides this only for
+    // local dev (server on :4000) or a deployment that skips the proxy.
+    const url = process.env.NEXT_PUBLIC_SOCKET_URL || undefined;
 
     const socket: GameSocket = io(url, {
       transports: ['websocket'],

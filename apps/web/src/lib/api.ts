@@ -17,7 +17,12 @@ import type {
   Vote,
 } from '@mafia/shared';
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+// Empty string => same-origin requests (`fetch('/api/session')`), which
+// Next.js rewrites (see next.config.mjs) proxy to the real backend. This
+// keeps the session cookie first-party. Falls back to an explicit origin
+// only when NEXT_PUBLIC_API_URL is set (local dev pointing at :4000, or a
+// deployment that deliberately opts out of the proxy).
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 
 export class ApiError extends Error {
   readonly code: string;
