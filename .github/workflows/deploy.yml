@@ -62,13 +62,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Build happens on Vercel's builders (not --prebuilt): Vercel runs the
+      # buildCommand from apps/web/vercel.json, which hops to the repo root
+      # and `npm ci` the whole workspace. Doing the build here instead runs
+      # into hoisted-dep resolution (styled-jsx lives in the root
+      # node_modules, not apps/web's).
       - name: Deploy to Vercel
         working-directory: apps/web
         run: |
           npm i -g vercel@latest
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel build --prod --token="$VERCEL_TOKEN"
-          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prod --token="$VERCEL_TOKEN"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
