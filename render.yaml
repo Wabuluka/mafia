@@ -6,9 +6,10 @@
 #     /api and /socket.io rewrites proxy to it, so the browser only ever
 #     sees this one origin and the session cookie stays first-party.
 #
-# Deploys are triggered by the GitHub Actions workflow
-# (.github/workflows/deploy.yml) via a Deploy Hook after CI passes — NOT by
-# Render's own auto-deploy-on-push, disabled below so a red build never ships.
+# Render watches the `main` branch and auto-deploys on every push
+# (autoDeploy: true below). GitHub Actions still runs lint/typecheck/test/
+# build on each push for a visible pass/fail signal, but it does NOT gate
+# the deploy — a red build can still ship, so keep an eye on the CI status.
 #
 # First-time setup:
 #   1. Render Dashboard -> New -> Blueprint -> pick this repo.
@@ -17,8 +18,8 @@
 #        WEB_ORIGIN   — the public https URL of THIS service, no trailing
 #                       slash (CORS + the session cookie string-match it).
 #      SESSION_SECRET / METRICS_TOKEN are generated once by Render and persist.
-#   3. Settings -> Deploy Hook: copy the URL into the GitHub repo secret
-#      RENDER_DEPLOY_HOOK_URL.
+#   3. Connect the GitHub repo to this Render service (Settings -> Build &
+#      Deploy -> Repository) so push-to-main triggers a build.
 #
 # API_ORIGIN is NOT set here — it's baked to http://127.0.0.1:4000 at image
 # build time (Dockerfile) since it only ever points at the co-located server.
@@ -32,8 +33,8 @@ services:
     plan: starter
     region: oregon
     branch: main
-    # CI gates the deploy; don't let Render deploy on raw push.
-    autoDeploy: false
+    # Render redeploys automatically on every push to `main`.
+    autoDeploy: true
     # Next serves this; it 200s once both processes are up.
     healthCheckPath: /
     envVars:

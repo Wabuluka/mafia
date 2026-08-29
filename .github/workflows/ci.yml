@@ -1,4 +1,8 @@
-name: CI & Deploy
+name: CI
+
+# Status-only. Deploys are handled by Render's own auto-deploy-on-push
+# (autoDeploy: true in render.yaml) — this workflow just reports a
+# pass/fail signal on each push/PR and does NOT gate or trigger the deploy.
 
 on:
   push:
@@ -7,8 +11,8 @@ on:
     branches: [main]
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: false
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
@@ -39,13 +43,3 @@ jobs:
           # /socket.io to the co-located server. A dummy here just lets
           # `next build` succeed in CI.
           API_ORIGIN: https://example.com
-
-  deploy:
-    name: Deploy (Render)
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Render deploy
-        run: |
-          curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
