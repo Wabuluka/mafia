@@ -24,6 +24,46 @@ describe('redactStateFor', () => {
     }
   });
 
+  it('sends the public nomination tally and shortlist identically to every viewer, living or dead', () => {
+    const state = buildState({
+      phase: 'DAY_DISCUSSION',
+      roundNumber: 1,
+      players: [
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'v2', name: 'B', role: 'VILLAGER' },
+        { id: 'ghost', name: 'G', role: 'VILLAGER', status: 'DEAD' },
+      ],
+      nominations: [{ nominatorId: pid('v1'), targetId: pid('v2'), dayNumber: 1, submittedAt: 1 }],
+      shortlistedIds: [pid('v2')],
+    });
+
+    const livingView = redactStateFor(state, pid('v1'));
+    const deadView = redactStateFor(state, pid('ghost'));
+
+    for (const view of [livingView, deadView]) {
+      expect(view.nominations).toEqual([{ nominatorId: pid('v1'), targetId: pid('v2'), dayNumber: 1, submittedAt: 1 }]);
+      expect(view.shortlistedIds).toEqual([pid('v2')]);
+    }
+  });
+
+  it('filters the nomination tally to the current round only', () => {
+    const state = buildState({
+      phase: 'DAY_DISCUSSION',
+      roundNumber: 2,
+      players: [
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'v2', name: 'B', role: 'VILLAGER' },
+      ],
+      nominations: [
+        { nominatorId: pid('v1'), targetId: pid('v2'), dayNumber: 1, submittedAt: 1 }, // stale prior round
+        { nominatorId: pid('v2'), targetId: pid('v1'), dayNumber: 2, submittedAt: 2 },
+      ],
+    });
+
+    const view = redactStateFor(state, pid('v1'));
+    expect(view.nominations).toEqual([{ nominatorId: pid('v2'), targetId: pid('v1'), dayNumber: 2, submittedAt: 2 }]);
+  });
+
   it('includes the viewer\'s own role only in `you`, never in the players array', () => {
     const state = buildState({
       players: [
@@ -38,6 +78,49 @@ describe('redactStateFor', () => {
     expect((selfEntry as { role?: unknown } | undefined)?.role).toBeUndefined();
   });
 
+  it('flags the host/moderator\'s own view with you.isModerator, and gives them no role', () => {
+    const state = buildState({
+      players: [
+        { id: 'host', name: 'Host', isHost: true },
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+      ],
+    });
+
+    const hostView = redactStateFor(state, pid('host'));
+    expect(hostView.you.isModerator).toBe(true);
+    expect(hostView.you.role).toBeUndefined();
+
+    const playerView = redactStateFor(state, pid('v1'));
+    expect(playerView.you.isModerator).toBe(false);
+  });
+
+  it('omits the host/moderator entirely from every other viewer\'s roster', () => {
+    const state = buildState({
+      players: [
+        { id: 'host', name: 'Host', isHost: true },
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'v2', name: 'B', role: 'DETECTIVE' },
+      ],
+    });
+
+    const playerView = redactStateFor(state, pid('v1'));
+    expect(playerView.players.some((p) => p.id === pid('host'))).toBe(false);
+    // The rest of the roster is untouched — only the host's row is hidden.
+    expect(playerView.players.map((p) => p.id).sort()).toEqual([pid('v1'), pid('v2')].sort());
+  });
+
+  it('still shows the host their own row, and shows the host EVERY row', () => {
+    const state = buildState({
+      players: [
+        { id: 'host', name: 'Host', isHost: true },
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+      ],
+    });
+
+    const hostView = redactStateFor(state, pid('host'));
+    expect(hostView.players.map((p) => p.id).sort()).toEqual([pid('host'), pid('v1')].sort());
+  });
+
   it('reveals a role once it has been publicly revealed (revealedRole)', () => {
     const state = brandFullGameState({
       villageCode: 'ABCD' as FullGameState['villageCode'],
@@ -49,12 +132,106 @@ describe('redactStateFor', () => {
       ],
       nightActions: [],
       votes: [],
+      nominations: [],
+      shortlistedIds: [],
       chatLog: [],
     });
 
     const view = redactStateFor(state, pid('villager1'));
     const dead = view.players.find((p) => p.id === pid('mafia1'));
     expect(dead?.revealedRole).toBe('MAFIA');
+  });
+
+  describe('pendingNarration reveal gate (human moderator model)', () => {
+    /** A resolution that already killed 'victim' (status/revealedRole
+     * already applied, exactly as phaseLoop.ts's advancePhase does) but is
+     * still sitting in pendingNarration, unrevealed. */
+    function buildPendingDeathState(): FullGameState {
+      return brandFullGameState({
+        villageCode: 'ABCD' as FullGameState['villageCode'],
+        phase: 'DAY_DISCUSSION',
+        roundNumber: 1,
+        players: [
+          { id: pid('host1'), name: 'Host', role: 'VILLAGER', status: 'ALIVE', connected: true, isHost: true, isReady: true, joinedAt: 0 },
+          { id: pid('victim'), name: 'Victim', role: 'MAFIA', revealedRole: 'MAFIA', status: 'DEAD', connected: true, isHost: false, isReady: true, joinedAt: 0 },
+          { id: pid('bystander'), name: 'Bystander', role: 'VILLAGER', status: 'ALIVE', connected: true, isHost: false, isReady: true, joinedAt: 0 },
+        ],
+        nightActions: [],
+        votes: [],
+        nominations: [],
+        shortlistedIds: [],
+        chatLog: [],
+        pendingNarration: {
+          forPhase: 'NIGHT',
+          text: 'Victim was found dead.',
+          outcome: { died: [{ playerId: pid('victim'), role: 'MAFIA' }], wasTie: false },
+        },
+      });
+    }
+
+    it('masks a third party\'s view of a not-yet-revealed death: status back to ALIVE, revealedRole stripped', () => {
+      const state = buildPendingDeathState();
+      const view = redactStateFor(state, pid('bystander'));
+      const victim = view.players.find((p) => p.id === pid('victim'));
+      expect(victim?.status).toBe('ALIVE');
+      expect(victim?.revealedRole).toBeUndefined();
+    });
+
+    it('hides pendingNarration entirely from a non-host viewer', () => {
+      const state = buildPendingDeathState();
+      const view = redactStateFor(state, pid('bystander'));
+      expect(view.pendingNarration).toBeUndefined();
+    });
+
+    it('shows the victim their OWN death immediately, even though others don\'t see it yet', () => {
+      const state = buildPendingDeathState();
+      const view = redactStateFor(state, pid('victim'));
+      const self = view.players.find((p) => p.id === pid('victim'));
+      expect(self?.status).toBe('DEAD');
+      expect(self?.revealedRole).toBe('MAFIA');
+    });
+
+    it('gives the host the real, unmasked roster and the pendingNarration itself', () => {
+      const state = buildPendingDeathState();
+      const view = redactStateFor(state, pid('host1'));
+      const victim = view.players.find((p) => p.id === pid('victim'));
+      expect(victim?.status).toBe('DEAD');
+      expect(victim?.revealedRole).toBe('MAFIA');
+      expect(view.pendingNarration?.text).toBe('Victim was found dead.');
+    });
+
+    it('leaves an already-revealed (prior round) death visible — only the CURRENT pendingNarration is masked', () => {
+      const state = brandFullGameState({
+        villageCode: 'ABCD' as FullGameState['villageCode'],
+        phase: 'DAY_VOTE',
+        roundNumber: 2,
+        players: [
+          { id: pid('host1'), name: 'Host', role: 'VILLAGER', status: 'ALIVE', connected: true, isHost: true, isReady: true, joinedAt: 0 },
+          // Died and was already revealed last round — not in this round's pendingNarration.
+          { id: pid('oldVictim'), name: 'Old', role: 'DOCTOR', revealedRole: 'DOCTOR', status: 'DEAD', connected: true, isHost: false, isReady: true, joinedAt: 0 },
+          { id: pid('newVictim'), name: 'New', role: 'MAFIA', revealedRole: 'MAFIA', status: 'DEAD', connected: true, isHost: false, isReady: true, joinedAt: 0 },
+          { id: pid('bystander'), name: 'Bystander', role: 'VILLAGER', status: 'ALIVE', connected: true, isHost: false, isReady: true, joinedAt: 0 },
+        ],
+        nightActions: [],
+        votes: [],
+        nominations: [],
+        shortlistedIds: [],
+        chatLog: [],
+        pendingNarration: {
+          forPhase: 'DAY_VOTE',
+          text: 'New was voted out.',
+          outcome: { died: [{ playerId: pid('newVictim'), role: 'MAFIA' }], wasTie: false },
+        },
+      });
+
+      const view = redactStateFor(state, pid('bystander'));
+      const oldVictim = view.players.find((p) => p.id === pid('oldVictim'));
+      const newVictim = view.players.find((p) => p.id === pid('newVictim'));
+      expect(oldVictim?.status).toBe('DEAD'); // prior reveal stays visible
+      expect(oldVictim?.revealedRole).toBe('DOCTOR');
+      expect(newVictim?.status).toBe('ALIVE'); // current one is masked
+      expect(newVictim?.revealedRole).toBeUndefined();
+    });
   });
 
   it('gives the mafia player their living teammates\' ids', () => {
@@ -176,6 +353,80 @@ describe('redactStateFor', () => {
     expect(view.you.mafiaNightTargets).toBeUndefined();
   });
 
+  it('gives a dead viewer a count-only night-activity signal during NIGHT', () => {
+    const state = buildState({
+      phase: 'NIGHT',
+      roundNumber: 3,
+      players: [
+        { id: 'mafia1', name: 'M', role: 'MAFIA' },
+        { id: 'doctor1', name: 'D', role: 'DOCTOR' },
+        { id: 'detective1', name: 'Det', role: 'DETECTIVE' },
+        { id: 'ghost', name: 'G', role: 'VILLAGER', status: 'DEAD' },
+      ],
+      nightActions: [
+        { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('doctor1'), nightNumber: 3, submittedAt: 1 },
+        // Same actor resubmitting (see nightActions.ts's "last submission
+        // wins" rule) must not inflate the count past 1 distinct actor.
+        { id: 'a2', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('detective1'), nightNumber: 3, submittedAt: 2 },
+        // A prior round's action must not count toward THIS round's tally.
+        { id: 'a0', actorId: pid('doctor1'), actorRole: 'DOCTOR', targetId: pid('mafia1'), nightNumber: 2, submittedAt: 1 },
+      ],
+    });
+
+    const view = redactStateFor(state, pid('ghost'));
+    // 1 distinct actor (mafia1) out of 3 living roles that act at night
+    // (mafia1, doctor1, detective1).
+    expect(view.you.deadNightProgress).toEqual({ actedCount: 1, totalActingRoles: 3 });
+  });
+
+  it('does not populate deadNightProgress outside of NIGHT', () => {
+    const state = buildState({
+      phase: 'DAY_DISCUSSION',
+      players: [{ id: 'ghost', name: 'G', role: 'VILLAGER', status: 'DEAD' }],
+    });
+    const view = redactStateFor(state, pid('ghost'));
+    expect(view.you.deadNightProgress).toBeUndefined();
+  });
+
+  it('does not populate deadNightProgress for a LIVING viewer, even during NIGHT', () => {
+    const state = buildState({
+      phase: 'NIGHT',
+      players: [
+        { id: 'mafia1', name: 'M', role: 'MAFIA' },
+        { id: 'villager1', name: 'V', role: 'VILLAGER' },
+      ],
+    });
+    for (const viewerId of ['mafia1', 'villager1'] as const) {
+      const view = redactStateFor(state, pid(viewerId));
+      expect(view.you.deadNightProgress).toBeUndefined();
+    }
+  });
+
+  it('never leaks an actorId or targetId from nightActions into a dead viewer\'s PlayerView', () => {
+    const state = buildState({
+      phase: 'NIGHT',
+      roundNumber: 1,
+      players: [
+        { id: 'mafia1', name: 'M', role: 'MAFIA' },
+        { id: 'villager1', name: 'V', role: 'VILLAGER' },
+        { id: 'ghost', name: 'G', role: 'VILLAGER', status: 'DEAD' },
+      ],
+      nightActions: [
+        { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('villager1'), nightNumber: 1, submittedAt: 1 },
+      ],
+    });
+
+    const view = redactStateFor(state, pid('ghost'));
+    const serialized = JSON.stringify(view);
+    // The only legitimate way an id can appear is as a player's own `id`
+    // field (roster rows) — neither the mafia actor's id nor the villager
+    // target's id should appear anywhere else (e.g. inside `you`) beyond
+    // that. deadNightProgress itself must carry no id fields at all.
+    expect(view.you.deadNightProgress).toEqual({ actedCount: 1, totalActingRoles: 1 });
+    expect(Object.keys(view.you.deadNightProgress ?? {})).toEqual(['actedCount', 'totalActingRoles']);
+    expect(serialized).not.toContain('"targetId"');
+  });
+
   it('gives the doctor lastProtectedPlayerId when they protected someone the immediately preceding night', () => {
     const state = buildState({
       phase: 'NIGHT',
@@ -284,6 +535,8 @@ describe('redactStateFor property: no cross-player role leakage', () => {
           })),
           nightActions: [],
           votes: [],
+          nominations: [],
+          shortlistedIds: [],
           chatLog: [],
         });
 
@@ -298,10 +551,27 @@ describe('redactStateFor property: no cross-player role leakage', () => {
         // in-memory object shape.
         const serialized = JSON.parse(JSON.stringify(view)) as typeof view;
 
+        // Player index 0 is always the host/moderator in this fixture (see
+        // `isHost: p.idSuffix === 0` below) — invisible to every OTHER
+        // viewer's roster entirely (see redact.ts's visiblePlayerIds), not
+        // merely masked field-by-field like a pending death. `viewerIsHost`
+        // mirrors that same exception: the host's own view still sees
+        // everyone, themselves included.
+        const viewerIsHost = viewer.idSuffix === 0;
+
         for (const other of players) {
           if (other.idSuffix === viewer.idSuffix) continue; // self is allowed via `you`
           const otherId = `p${other.idSuffix}`;
+          const otherIsHost = other.idSuffix === 0;
           const publicEntry = serialized.players.find((p) => p.id === otherId);
+
+          if (otherIsHost && !viewerIsHost) {
+            // The host is invisible to a non-host viewer's roster — no
+            // entry at all, not even a masked one.
+            expect(publicEntry).toBeUndefined();
+            continue;
+          }
+
           expect(publicEntry).toBeDefined();
 
           // `role` must never appear on another player's public entry at all.
@@ -316,7 +586,11 @@ describe('redactStateFor property: no cross-player role leakage', () => {
         }
 
         // The viewer's own role must appear exactly where expected: in
-        // `you.role`, and nowhere on their own public roster entry.
+        // `you.role`, and nowhere on their own public roster entry. (This
+        // fixture assigns every generated player a `role`, host included —
+        // it's a generic role-leakage property test, not a test of the
+        // real game's "the host never has a role" invariant, which is
+        // covered separately in the example-based tests above.)
         expect(serialized.you.role).toBe(viewer.role);
         const selfEntry = serialized.players.find((p) => p.id === `p${viewer.idSuffix}`);
         expect(Object.prototype.hasOwnProperty.call(selfEntry, 'role')).toBe(false);

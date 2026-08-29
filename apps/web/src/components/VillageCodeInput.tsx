@@ -29,17 +29,60 @@ export interface VillageCodeInputProps {
   onChange?: (partialCode: string) => void;
   disabled?: boolean;
   autoFocus?: boolean;
+  /** Pre-fills the boxes (e.g. from a `?code=` deep link) on first render.
+   * Any characters outside VILLAGE_CODE_ALPHABET are stripped and the rest
+   * truncated/padded to VILLAGE_CODE_LENGTH, so a malformed or partial
+   * query param degrades to "some boxes filled" rather than crashing. Only
+   * applied on mount — later prop changes don't re-fill mid-edit. */
+  initialValue?: string;
 }
 
 const VALID_CHAR = /^[A-Za-z0-9]$/;
 
-export function VillageCodeInput({ onComplete, onChange, disabled = false, autoFocus = true }: VillageCodeInputProps) {
-  const [chars, setChars] = useState<string[]>(() => Array(VILLAGE_CODE_LENGTH).fill(''));
+function toInitialChars(initialValue: string | undefined): string[] {
+  const cleaned = (initialValue ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const chars = Array(VILLAGE_CODE_LENGTH).fill('');
+  for (let i = 0; i < Math.min(cleaned.length, VILLAGE_CODE_LENGTH); i += 1) {
+    chars[i] = cleaned[i]!;
+  }
+  return chars;
+}
+
+export function VillageCodeInput({
+  onComplete,
+  onChange,
+  disabled = false,
+  autoFocus = true,
+  initialValue,
+}: VillageCodeInputProps) {
+  const [chars, setChars] = useState<string[]>(() => toInitialChars(initialValue));
   const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
-    if (autoFocus) inputRefs.current[0]?.focus();
+    if (autoFocus) {
+      // A prefilled code should focus the first EMPTY box, not box 0 — a
+      // player deep-linked in with a full code should land on "Join",
+      // not have to click past 4 already-filled boxes.
+      const firstEmpty = chars.findIndex((c) => c === '');
+      inputRefs.current[firstEmpty === -1 ? VILLAGE_CODE_LENGTH - 1 : firstEmpty]?.focus();
+    }
+    // Only on mount — see initialValue's own doc comment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFocus]);
+
+  useEffect(() => {
+    // Fire onComplete/onChange for a code that arrived already-complete
+    // (e.g. a full ?code= deep link) — the normal commit() path only runs
+    // from user interaction, so a prefilled-complete code needs its own
+    // kick to notify the parent without waiting for a keystroke.
+    const code = chars.join('');
+    onChange?.(code);
+    if (code.length === VILLAGE_CODE_LENGTH && chars.every((c) => c !== '')) {
+      onComplete(code);
+    }
+    // Only on mount — subsequent completions go through commit().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const commit = useCallback(
     (next: string[]) => {
@@ -129,7 +172,7 @@ export function VillageCodeInput({ onComplete, onChange, disabled = false, autoF
             'h-16 w-14 rounded-2xl border-2 bg-elevated text-center text-3xl font-bold uppercase tabular-nums',
             'text-base-content caret-primary outline-none transition-colors motion-reduce:transition-none',
             'focus:border-primary disabled:opacity-40',
-            char ? 'border-white/15' : 'border-white/5',
+            char ? 'border-base-content/15' : 'border-base-content/10',
           ].join(' ')}
         />
       ))}

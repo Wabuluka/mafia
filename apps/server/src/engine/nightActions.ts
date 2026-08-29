@@ -9,8 +9,12 @@ import type { FullGameState, NightAction, PlayerId, Role } from '@mafia/shared';
 import { ok, reject, type EngineEffect, type EngineResult, type Resolution } from './types';
 
 /** Roles that submit a night action. Order here also governs resolution
- * order in `resolveNight` (doctor must be known before the kill resolves). */
-const NIGHT_ACTING_ROLES: readonly Role[] = ['MAFIA', 'DOCTOR', 'DETECTIVE'];
+ * order in `resolveNight` (doctor must be known before the kill resolves).
+ * Exported for redact.ts's `deadNightProgress` — the total-roles-acting
+ * count a dead spectator sees needs the exact same "which roles act at
+ * night" list this module already maintains, rather than a second,
+ * easy-to-drift copy of it. */
+export const NIGHT_ACTING_ROLES: readonly Role[] = ['MAFIA', 'DOCTOR', 'DETECTIVE'];
 
 function findPlayer(state: FullGameState, playerId: PlayerId) {
   return state.players.find((p) => p.id === playerId);
@@ -53,12 +57,35 @@ export function applyNightAction(
     return reject('WRONG_ROLE', `${actor.role ?? 'unknown role'} does not act at night.`);
   }
 
-  const alreadyActed = state.nightActions.some(
+  // Sequential moderator-driven flow: only the role currently "on the
+  // clock" (state.nightSubPhase) may submit. See @mafia/shared's
+  // NightSubPhaseSchema and nextApplicableNightSubPhase — the moderator
+  // (host) explicitly walks MAFIA -> DETECTIVE -> DOCTOR via
+  // advanceNightSubPhase, skipping roles no one living holds.
+  if (actor.role !== state.nightSubPhase) {
+    return reject(
+      'WRONG_SUB_PHASE',
+      `It is not ${actor.role}'s turn yet (current: ${state.nightSubPhase ?? 'none'}).`,
+    );
+  }
+
+  const existingActionThisRound = state.nightActions.find(
     (a) => a.actorId === input.actorId && a.nightNumber === state.roundNumber,
   );
-  if (alreadyActed) {
+  // MAFIA may revise their target while discussing/deliberating (multiple
+  // living mafia each submitting, possibly more than once, before the
+  // moderator locks the sub-phase and moves on — "last submission wins"
+  // per resolveNight below) — so a repeat MAFIA submission replaces the
+  // earlier one rather than being rejected. DETECTIVE and DOCTOR are
+  // single-shot: they get one investigate/heal choice per night, same as
+  // before this change.
+  if (existingActionThisRound && actor.role !== 'MAFIA') {
     return reject('ALREADY_ACTED', 'This player already submitted a night action this round.');
   }
+  const nightActionsWithoutExisting =
+    existingActionThisRound && actor.role === 'MAFIA'
+      ? state.nightActions.filter((a) => a !== existingActionThisRound)
+      : state.nightActions;
 
   if (input.targetId !== undefined) {
     const target = findPlayer(state, input.targetId);
@@ -67,6 +94,15 @@ export function applyNightAction(
     }
     if (target.status === 'DEAD') {
       return reject('TARGET_DEAD', 'Cannot target a player who is already dead.');
+    }
+    // The host/moderator is never a valid target — they never received a
+    // role and stand outside the game entirely (see Player.isHost's doc
+    // comment). Structurally near-impossible to reach in practice (the
+    // client's TargetGrid excludes the host — see NightPhase.tsx), but
+    // checked here too rather than relying solely on client-side
+    // filtering, same defense-in-depth posture as the DEAD check above.
+    if (target.isHost) {
+      return reject('NOT_A_PARTICIPANT', 'Cannot target the moderator.');
     }
   }
 
@@ -81,7 +117,7 @@ export function applyNightAction(
 
   return ok({
     ...state,
-    nightActions: [...state.nightActions, action],
+    nightActions: [...nightActionsWithoutExisting, action],
   });
 }
 
@@ -120,19 +156,24 @@ export function resolveNight(state: FullGameState): Resolution {
   const killWasSaved = killTargetId !== undefined && killTargetId === effectiveSaveTargetId;
   const diedThisNight = killTargetId !== undefined && !killWasSaved ? killTargetId : undefined;
 
+  const victim = diedThisNight !== undefined ? state.players.find((p) => p.id === diedThisNight) : undefined;
+
   let players = state.players;
-  if (diedThisNight !== undefined) {
-    players = players.map((p) => (p.id === diedThisNight ? { ...p, status: 'DEAD' } : p));
+  if (diedThisNight !== undefined && victim?.role) {
+    // A death publicly reveals the victim's role — see the module header
+    // in engine/redact.ts: `revealedRole` is the ONLY channel a role can
+    // legitimately reach other clients through outside of `you`, and this
+    // is the one place it's actually set.
+    players = players.map((p) => (p.id === diedThisNight ? { ...p, status: 'DEAD', revealedRole: victim.role } : p));
   }
 
   const effects: EngineEffect[] = [];
 
-  if (diedThisNight !== undefined) {
-    const victim = state.players.find((p) => p.id === diedThisNight);
-    effects.push({ type: 'PLAYER_DIED', playerId: diedThisNight, cause: 'MAFIA_KILL' });
+  if (diedThisNight !== undefined && victim?.role) {
+    effects.push({ type: 'PLAYER_DIED', playerId: diedThisNight, role: victim.role, cause: 'MAFIA_KILL' });
     effects.push({
       type: 'NARRATION',
-      text: `${victim?.name ?? 'A player'} was found dead. The town wakes to grim news.`,
+      text: `${victim.name} was found dead. The town wakes to grim news.`,
     });
   } else if (killTargetId !== undefined && killWasSaved) {
     effects.push({

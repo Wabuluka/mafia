@@ -32,6 +32,14 @@ export function registerLeaveVillageHandler(io: GameServer, socket: GameSocket):
 
     const player = socket.player;
 
+    // Mongo is updated FIRST and awaited before the in-memory roster is
+    // touched — see kickPlayer.ts's identical comment: Mongo is the point
+    // of truth other handlers (e.g. respondToJoinRequest's capacity check)
+    // read directly, so leaving it stale while memory has already dropped
+    // the player would let a same-tick accept see a not-yet-decremented
+    // count and wrongly reject as VILLAGE_FULL right after a slot freed up.
+    await villagesRepository.removePlayerFromVillage(parsed.villageCode, player._id);
+
     // Transfer host BEFORE removing the departing player from the roster —
     // transferHostIfNeeded needs to see the full player list (including
     // the outgoing host) to know who currently holds it, then we drop
@@ -43,7 +51,6 @@ export function registerLeaveVillageHandler(io: GameServer, socket: GameSocket):
     };
     session.sockets.delete(player._id);
 
-    await villagesRepository.removePlayerFromVillage(parsed.villageCode, player._id);
     await socket.leave(gameVillage(parsed.villageCode));
 
     io.to(gameVillage(parsed.villageCode)).emit('playerLeft', { playerId: player._id, playerName: player.displayName, reason: 'LEFT' });
@@ -55,7 +62,7 @@ export function registerLeaveVillageHandler(io: GameServer, socket: GameSocket):
       if (newHost) {
         await villagesRepository.setHost(parsed.villageCode, newHost.id);
       }
-      broadcastStateToVillage(io, session.state);
+      broadcastStateToVillage(io, session);
     }
 
     ackOk(ack);

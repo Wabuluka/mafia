@@ -17,6 +17,17 @@
 // `overflow-hidden` on the shell root, combined with `overflow-y-auto` on
 // ONLY the content region, is what prevents the classic mobile bug of the
 // page and an inner container both trying to scroll independently.
+//
+// OPTIONAL `backdrop` SLOT: for a screen that wants full-bleed atmosphere
+// behind BOTH the header and the content as one continuous scene — e.g.
+// Home mounting NightSkyBackdrop so the app's front door reads as the same
+// world as the in-game night screens, rather than a plain flat surface
+// with a starry game hiding behind it. When present, header/content/
+// actionBar all go transparent so the backdrop (rendered first, absolutely
+// positioned, behind everything via z-index) shows through uninterrupted;
+// omit it and the shell renders exactly as before; NightSkyBackdrop/
+// DaySkyBackdrop's own header comments cover why they're safe to reuse
+// here (purely decorative, identical for every viewer, aria-hidden).
 // ---------------------------------------------------------------------------
 
 import type { ReactNode } from 'react';
@@ -25,18 +36,23 @@ export interface AppShellProps {
   header: ReactNode;
   children: ReactNode;
   actionBar?: ReactNode;
+  backdrop?: ReactNode;
 }
 
-export function AppShell({ header, children, actionBar }: AppShellProps) {
+export function AppShell({ header, children, actionBar, backdrop }: AppShellProps) {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-surface">
-      <header className="shrink-0 border-b border-white/5 bg-surface pt-safe-top">
+    <div className={`relative flex h-dvh flex-col overflow-hidden ${backdrop ? '' : 'bg-surface'}`}>
+      {backdrop}
+
+      <header
+        className={`relative z-10 shrink-0 pt-safe-top ${backdrop ? '' : 'border-b border-base-content/10 bg-surface'}`}
+      >
         {header}
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</main>
+      <main className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</main>
 
-      {actionBar && <footer className="shrink-0">{actionBar}</footer>}
+      {actionBar && <footer className="relative z-10 shrink-0">{actionBar}</footer>}
     </div>
   );
 }

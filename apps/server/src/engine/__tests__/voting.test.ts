@@ -58,6 +58,78 @@ describe('castVote', () => {
     }
   });
 
+  it('rejects a vote from the host/moderator', () => {
+    const state = buildState({
+      phase: 'DAY_VOTE',
+      players: [
+        { id: 'host', name: 'Host', isHost: true },
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+      ],
+    });
+
+    const result = castVote(state, { voterId: pid('host'), target: pid('v1'), now: 100 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('NOT_A_PARTICIPANT');
+  });
+
+  it('rejects voting to eliminate the host/moderator', () => {
+    const state = buildState({
+      phase: 'DAY_VOTE',
+      players: [
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'host', name: 'Host', isHost: true },
+      ],
+    });
+
+    const result = castVote(state, { voterId: pid('v1'), target: pid('host'), now: 100 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('NOT_A_PARTICIPANT');
+  });
+
+  it('rejects voting for a player who was not shortlisted', () => {
+    const state = buildState({
+      phase: 'DAY_VOTE',
+      shortlistedIds: [pid('v2')],
+      players: [
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'v2', name: 'B', role: 'VILLAGER' },
+        { id: 'v3', name: 'C', role: 'VILLAGER' },
+      ],
+    });
+
+    const result = castVote(state, { voterId: pid('v1'), target: pid('v3'), now: 100 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('INVALID_TARGET');
+  });
+
+  it('accepts voting for a shortlisted player', () => {
+    const state = buildState({
+      phase: 'DAY_VOTE',
+      shortlistedIds: [pid('v2')],
+      players: [
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'v2', name: 'B', role: 'VILLAGER' },
+      ],
+    });
+
+    const result = castVote(state, { voterId: pid('v1'), target: pid('v2'), now: 100 });
+    expect(result.ok).toBe(true);
+  });
+
+  it('an empty shortlist imposes no restriction (open vote)', () => {
+    const state = buildState({
+      phase: 'DAY_VOTE',
+      shortlistedIds: [],
+      players: [
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+        { id: 'v2', name: 'B', role: 'VILLAGER' },
+      ],
+    });
+
+    const result = castVote(state, { voterId: pid('v1'), target: pid('v2'), now: 100 });
+    expect(result.ok).toBe(true);
+  });
+
   it('replaces a prior vote from the same voter in the same round instead of stacking', () => {
     const state = buildState({
       phase: 'DAY_VOTE',
@@ -103,7 +175,8 @@ describe('resolveVote', () => {
     const { state: next, effects } = resolveVote(state);
     const eliminated = next.players.find((p) => p.id === pid('v3'));
     expect(eliminated?.status).toBe('DEAD');
-    expect(effects).toContainEqual({ type: 'PLAYER_DIED', playerId: pid('v3'), cause: 'VOTE_ELIMINATION' });
+    expect(effects).toContainEqual({ type: 'PLAYER_DIED', playerId: pid('v3'), role: 'MAFIA', cause: 'VOTE_ELIMINATION' });
+    expect(eliminated?.revealedRole).toBe('MAFIA');
   });
 
   it('a tie vote eliminates nobody', () => {
@@ -123,6 +196,7 @@ describe('resolveVote', () => {
     const { state: next, effects } = resolveVote(state);
     expect(next.players.every((p) => p.status === 'ALIVE')).toBe(true);
     expect(effects.some((e) => e.type === 'PLAYER_DIED')).toBe(false);
+    expect(effects).toContainEqual({ type: 'VOTE_TIED' });
     expect(effects).toContainEqual({ type: 'NARRATION', text: 'The vote ended in a tie. No one is eliminated today.' });
   });
 
@@ -142,11 +216,12 @@ describe('resolveVote', () => {
       ],
     });
 
-    const { state: next } = resolveVote(state);
+    const { state: next, effects } = resolveVote(state);
     expect(next.players.every((p) => p.status === 'ALIVE')).toBe(true);
+    expect(effects).toContainEqual({ type: 'VOTE_TIED' });
   });
 
-  it('all-abstain eliminates nobody', () => {
+  it('all-abstain eliminates nobody and is NOT reported as a tie (no votes were cast at all)', () => {
     const state = buildState({
       phase: 'DAY_VOTE',
       roundNumber: 1,
@@ -160,7 +235,9 @@ describe('resolveVote', () => {
       ],
     });
 
-    const { state: next } = resolveVote(state);
+    const { state: next, effects } = resolveVote(state);
     expect(next.players.every((p) => p.status === 'ALIVE')).toBe(true);
+    expect(effects.some((e) => e.type === 'VOTE_TIED')).toBe(false);
+    expect(effects).toContainEqual({ type: 'NARRATION', text: 'No votes were cast. No one is eliminated today.' });
   });
 });

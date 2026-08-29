@@ -45,24 +45,41 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { io, type Socket } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 import type {
   AckResult,
+  AdvanceNightSubPhasePayload,
+  CancelJoinRequestPayload,
   CastVotePayload,
   ClientToServerEvents,
+  EndPhaseNowPayload,
   JoinVillagePayload,
   KickPlayerPayload,
   LeaveVillagePayload,
   VillageCode,
+  PauseTimerPayload,
+  PlayAgainPayload,
+  RequestToJoinPayload,
+  RespondToJoinRequestPayload,
+  ResumeTimerPayload,
+  RevealNarrationPayload,
   ServerToClientEvents,
   SendChatPayload,
   SetReadyPayload,
   StartGamePayload,
+  StartPhaseTimerPayload,
   SubmitNightActionPayload,
+  SubmitNominationPayload,
   UpdateVillageSettingsPayload,
 } from '@mafia/shared';
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+export type ConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'superseded'
+  | 'shuttingDown';
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -77,11 +94,22 @@ export interface TypedEmit {
   leaveVillage: (payload: LeaveVillagePayload) => Promise<AckResult>;
   setReady: (payload: SetReadyPayload) => Promise<AckResult>;
   startGame: (payload: StartGamePayload) => Promise<AckResult>;
+  playAgain: (payload: PlayAgainPayload) => Promise<AckResult>;
   submitNightAction: (payload: SubmitNightActionPayload) => Promise<AckResult>;
   castVote: (payload: CastVotePayload) => Promise<AckResult>;
+  submitNomination: (payload: SubmitNominationPayload) => Promise<AckResult>;
   sendChat: (payload: SendChatPayload) => Promise<AckResult>;
   kickPlayer: (payload: KickPlayerPayload) => Promise<AckResult>;
   updateVillageSettings: (payload: UpdateVillageSettingsPayload) => Promise<AckResult>;
+  requestToJoin: (payload: RequestToJoinPayload) => Promise<AckResult>;
+  respondToJoinRequest: (payload: RespondToJoinRequestPayload) => Promise<AckResult>;
+  cancelJoinRequest: (payload: CancelJoinRequestPayload) => Promise<AckResult>;
+  pauseTimer: (payload: PauseTimerPayload) => Promise<AckResult>;
+  resumeTimer: (payload: ResumeTimerPayload) => Promise<AckResult>;
+  startPhaseTimer: (payload: StartPhaseTimerPayload) => Promise<AckResult>;
+  endPhaseNow: (payload: EndPhaseNowPayload) => Promise<AckResult>;
+  revealNarration: (payload: RevealNarrationPayload) => Promise<AckResult>;
+  advanceNightSubPhase: (payload: AdvanceNightSubPhasePayload) => Promise<AckResult>;
 }
 
 export interface SocketContextValue {
@@ -126,6 +154,22 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const socketRef = useRef<GameSocket | null>(null);
   const activeVillageRef = useRef<VillageCode | null>(null);
   const hasConnectedBeforeRef = useRef(false);
+  /** Set once, permanently, on `sessionSuperseded` — this tab lost its
+   * session to a newer one (see the eviction logic in
+   * realtime/handlers/joinVillage.ts). Distinct from every other
+   * disconnect state in that it is NEVER retried: `connect()` below
+   * refuses to redial once this is set, matching the "clear message,
+   * locked out, full stop" contract this state exists for. */
+  const supersededRef = useRef(false);
+  /** Set once, permanently, on `serverShuttingDown` (see index.ts's
+   * graceful-shutdown sequence and realtime/shutdown.ts) — the process is
+   * about to exit and this socket's imminent 'disconnect' isn't something
+   * to retry into. Same terminal treatment as `supersededRef`: `connect()`
+   * below refuses to redial once set. A fresh page load once the new
+   * instance is up (behind whatever the deployment platform's restart
+   * delay is) is the intended recovery path, not an automatic reconnect
+   * racing the old process's teardown. */
+  const shuttingDownRef = useRef(false);
   // Force a re-render when the socket instance itself changes (on the
   // first `connect()` call, in practice) so consumers reading `socket`
   // from context see it.
@@ -133,18 +177,20 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   // The socket instance is created once, lazily, the first time
   // `connect()` is called — NOT eagerly here — but its event listeners
-  // only need wiring once too, so they're attached inside `connect()`
-  // itself rather than a separate effect keyed on a socket that doesn't
-  // exist yet at mount time.
-  const connect = useCallback(() => {
-    if (socketRef.current) {
-      // Already created — if it's mid-disconnect for some reason, nudge
-      // it to reconnect now rather than waiting for the backoff timer;
-      // otherwise this is just a harmless repeat call.
-      if (!socketRef.current.connected) socketRef.current.connect();
-      return;
-    }
+  // only need wiring once too, so they're attached inside `createSocket`
+  // (called from `connect()`, once its dynamic import of socket.io-client
+  // resolves — see that function below) rather than a separate effect
+  // keyed on a socket that doesn't exist yet at mount time.
+  //
+  // Guards against two overlapping connect() calls both winning the race to
+  // dynamic-import socket.io-client and each constructing their own socket
+  // — see the dynamicImportInFlightRef check below. Not a concern with the
+  // static top-level import this replaces (module init only ever runs
+  // once), so it's new surface area specifically introduced by deferring
+  // the import — worth calling out explicitly rather than assuming away.
+  const dynamicImportInFlightRef = useRef(false);
 
+  const createSocket = useCallback((io: typeof import('socket.io-client').io) => {
     const url = process.env.NEXT_PUBLIC_SOCKET_URL ?? 'http://localhost:4000';
 
     const socket: GameSocket = io(url, {
@@ -174,7 +220,37 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       hasConnectedBeforeRef.current = true;
     });
 
+    // Fires just before the server-initiated `disconnect` that follows a
+    // second tab/device joining the same session (see
+    // realtime/handlers/joinVillage.ts's eviction logic). Setting status
+    // here, ahead of the 'disconnect' handler below, is what lets that
+    // handler tell "we were superseded" apart from an ordinary server
+    // disconnect (auth failure, etc) — both arrive as reason ===
+    // 'io server disconnect', so the distinction has to come from this
+    // separate, more specific event, not from the disconnect reason alone.
+    socket.on('sessionSuperseded', () => {
+      supersededRef.current = true;
+      setStatus('superseded');
+    });
+
+    // Sent by the server as the first step of its own graceful shutdown
+    // (see realtime/shutdown.ts) — only to sockets in an active game, so
+    // this never fires for a lobby-only connection.
+    socket.on('serverShuttingDown', () => {
+      shuttingDownRef.current = true;
+      setStatus('shuttingDown');
+    });
+
     socket.on('disconnect', (reason) => {
+      if (supersededRef.current || shuttingDownRef.current) {
+        // Already reported as 'superseded'/'shuttingDown' above; don't
+        // downgrade back to a retriable 'disconnected'/'reconnecting'
+        // status, and don't let the reconnection manager keep trying —
+        // see connect_error below and the module header's "terminal, not
+        // retrying" contract for these states.
+        socket.disconnect();
+        return;
+      }
       // 'io server disconnect' means the server explicitly kicked us
       // (e.g. an auth failure) — the client-side reconnection manager
       // does NOT automatically retry that case, so it's reported as a
@@ -187,13 +263,57 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     });
 
     socket.on('connect_error', () => {
+      if (supersededRef.current || shuttingDownRef.current) return;
       setStatus((prev) => (prev === 'connected' ? 'reconnecting' : prev));
     });
 
     socketRef.current = socket;
-    setStatus('connecting');
+    // Already set to 'connecting' by connect() before the dynamic import
+    // kicked off — not repeated here, just forcing the re-render needed
+    // now that socketRef.current actually holds a real socket instance.
     forceRender((n) => n + 1);
   }, []);
+
+  const connect = useCallback(() => {
+    if (supersededRef.current || shuttingDownRef.current) return; // terminal — see the refs' doc comments
+    if (socketRef.current) {
+      // Already created — if it's mid-disconnect for some reason, nudge
+      // it to reconnect now rather than waiting for the backoff timer;
+      // otherwise this is just a harmless repeat call.
+      if (!socketRef.current.connected) socketRef.current.connect();
+      return;
+    }
+    if (dynamicImportInFlightRef.current) return; // already loading, see below
+
+    dynamicImportInFlightRef.current = true;
+    setStatus('connecting');
+
+    // Dynamically imported, not a top-level `import { io } from
+    // 'socket.io-client'`: this module (socket-context.tsx) is imported by
+    // (realtime)/layout.tsx, which wraps BOTH the lobby and the live game
+    // screen — but only the game screen's useVillageState actually calls
+    // connect() eagerly; the lobby screen also needs it, just slightly
+    // later in its own flow. Either way, a static import would force
+    // socket.io-client's ~40KB (its polling-transport code is NOT
+    // tree-shakeable even with `transports: ['websocket']` set at the
+    // call site below — that option is read at runtime, but the polling
+    // transport module is still statically imported by engine.io-client's
+    // own Socket class, see the Prompt 14 bundle-analysis notes) to be
+    // parsed and evaluated as part of the layout's initial JS, before
+    // React has even painted anything. Deferring it to the moment
+    // connect() is actually called moves that cost off the critical
+    // rendering path without changing WHEN a socket is opened (still only
+    // on an explicit connect() call, never eagerly — see the module
+    // header's point 1).
+    void import('socket.io-client').then(({ io }) => {
+      dynamicImportInFlightRef.current = false;
+      // A supersede or an unmount could have happened while the import
+      // was in flight; re-check both rather than blindly constructing a
+      // socket nobody wants anymore.
+      if (supersededRef.current || shuttingDownRef.current || socketRef.current) return;
+      createSocket(io);
+    });
+  }, [createSocket]);
 
   // Teardown on unmount only — the provider lives for the app's lifetime
   // (mounted once at the root layout), so in practice this only runs on a
@@ -216,11 +336,22 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       leaveVillage: (payload) => emitWithAck(socketRef.current, 'leaveVillage', payload),
       setReady: (payload) => emitWithAck(socketRef.current, 'setReady', payload),
       startGame: (payload) => emitWithAck(socketRef.current, 'startGame', payload),
+      playAgain: (payload) => emitWithAck(socketRef.current, 'playAgain', payload),
       submitNightAction: (payload) => emitWithAck(socketRef.current, 'submitNightAction', payload),
       castVote: (payload) => emitWithAck(socketRef.current, 'castVote', payload),
+      submitNomination: (payload) => emitWithAck(socketRef.current, 'submitNomination', payload),
       sendChat: (payload) => emitWithAck(socketRef.current, 'sendChat', payload),
       kickPlayer: (payload) => emitWithAck(socketRef.current, 'kickPlayer', payload),
       updateVillageSettings: (payload) => emitWithAck(socketRef.current, 'updateVillageSettings', payload),
+      requestToJoin: (payload) => emitWithAck(socketRef.current, 'requestToJoin', payload),
+      respondToJoinRequest: (payload) => emitWithAck(socketRef.current, 'respondToJoinRequest', payload),
+      cancelJoinRequest: (payload) => emitWithAck(socketRef.current, 'cancelJoinRequest', payload),
+      pauseTimer: (payload) => emitWithAck(socketRef.current, 'pauseTimer', payload),
+      resumeTimer: (payload) => emitWithAck(socketRef.current, 'resumeTimer', payload),
+      startPhaseTimer: (payload) => emitWithAck(socketRef.current, 'startPhaseTimer', payload),
+      endPhaseNow: (payload) => emitWithAck(socketRef.current, 'endPhaseNow', payload),
+      revealNarration: (payload) => emitWithAck(socketRef.current, 'revealNarration', payload),
+      advanceNightSubPhase: (payload) => emitWithAck(socketRef.current, 'advanceNightSubPhase', payload),
     }),
     // socketRef is a ref (stable identity) but its .current changes on
     // (re)connect; emit reads it lazily at call time, so this memo never

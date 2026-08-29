@@ -39,12 +39,13 @@
 // action from before the crash.
 // ---------------------------------------------------------------------------
 
-import { brandFullGameState, type FullGameState, type Player } from '@mafia/shared';
+import { brandFullGameState, nextApplicableNightSubPhase, type FullGameState, type Player } from '@mafia/shared';
 import { gamesRepository, villagesRepository } from '../db';
 import type { GameDocument } from '../db/types';
+import { logger } from '../logger';
 import { villageManager, type GameSession } from './VillageManager';
 import { broadcastStateToVillage, type GameServer } from './emit';
-import { scheduleNextPhase } from './phaseLoop';
+import { startCurrentPhase } from './phaseLoop';
 import { persistGameAbandoned } from './persistence';
 
 /** Rebuilds a FullGameState shell for a resumed game. Night
@@ -69,8 +70,22 @@ function reconstructState(game: GameDocument): FullGameState {
     phase: game.currentPhase,
     roundNumber: game.roundNumber,
     players,
+    // A resumed NIGHT restarts its moderator sequence from the beginning
+    // (matches the module header: nothing from the crashed phase's
+    // in-flight actions survives, so there's nothing to resume mid-
+    // sequence either) — first applicable role, same as a freshly started
+    // NIGHT. Any other resumed phase has no sub-phase concept.
+    nightSubPhase: game.currentPhase === 'NIGHT' ? nextApplicableNightSubPhase(players, undefined) : undefined,
     nightActions: [],
     votes: [],
+    nominations: [],
+    // A resumed DAY_VOTE has no surviving nomination history to recompute
+    // a real shortlist from (same "nothing from the crashed phase
+    // survives" rule as nightActions/votes above) — falls back to every
+    // living player being a valid target, same as resolveNominations'
+    // own empty-nominations fallback, rather than an empty shortlist that
+    // would make every vote INVALID_TARGET.
+    shortlistedIds: game.currentPhase === 'DAY_VOTE' ? players.filter((p) => p.status === 'ALIVE').map((p) => p.id) : [],
     chatLog: [],
     endReason: game.endReason,
     winningTeam: game.winningTeam,
@@ -95,8 +110,11 @@ export async function recoverInProgressGames(io: GameServer): Promise<{ resumed:
     if (!village || village.status !== 'IN_GAME') {
       await persistGameAbandoned(game._id);
       abandoned += 1;
-      // eslint-disable-next-line no-console
-      console.warn(`[restart] abandoned game ${game._id} (village ${game.villageCode}): ${!village ? 'village not found' : `village status is ${village.status}`}`);
+      logger.warn('abandoned game on restart recovery', {
+        gameId: game._id,
+        villageCode: game.villageCode,
+        reason: !village ? 'village not found' : `village status is ${village.status}`,
+      });
       continue;
     }
 
@@ -115,21 +133,34 @@ export async function recoverInProgressGames(io: GameServer): Promise<{ resumed:
       // (they're a lobby-only, in-memory setting), so there's nothing to
       // restore here even in principle.
       phaseDurationOverridesMs: {},
+      // A resumed game is always past LOBBY (see the status filter above)
+      // — join-approval is a lobby-only concept, so there's nothing to
+      // restore here either, same rationale as phaseDurationOverridesMs.
+      pendingRequests: new Map(),
     };
     villageManager.create(session);
 
     // Restart the current phase from scratch with a full-duration timer —
-    // see the module header for why no partial time is carried over.
-    scheduleNextPhase(io, session, Date.now());
-    broadcastStateToVillage(io, session.state);
+    // see the module header for why no partial time is carried over. A
+    // resumed phase auto-starts its timer immediately, unlike a normal
+    // human-moderator transition (see phaseLoop.ts's module header) —
+    // there's no host client sitting in this recovery path to explicitly
+    // press "start", and leaving a resumed game's timer un-started forever
+    // (with no one around to ever start it) would be strictly worse than
+    // resuming automatically at the cost of losing pause/reveal state,
+    // which restart.ts already documents as not preserved across a crash.
+    startCurrentPhase(io, session, Date.now());
+    broadcastStateToVillage(io, session);
 
     resumed += 1;
-    // eslint-disable-next-line no-console
-    console.log(`[restart] resumed game ${game._id} (village ${game.villageCode}) at phase ${game.currentPhase}`);
+    logger.info('resumed game on restart recovery', {
+      gameId: game._id,
+      villageCode: game.villageCode,
+      phase: game.currentPhase,
+    });
   }
 
-  // eslint-disable-next-line no-console
-  console.log(`[restart] recovery complete: ${resumed} resumed, ${abandoned} abandoned`);
+  logger.info('restart recovery complete', { resumed, abandoned });
   return { resumed, abandoned };
 }
 

@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Overrides tsconfig.base.json's ESNext/Bundler/noEmit settings (see
+    // that file) for exactly this one purpose: producing a real,
+    // consumer-agnostic CommonJS dist/ this package's `main`/`types` can
+    // point at. Everywhere else (typecheck, editor tooling, the Next.js
+    // web app via `transpilePackages`) this package is still consumed as
+    // raw TS source directly — this build config exists ONLY so
+    // apps/server's own `tsc` production build (CommonJS — see its
+    // tsconfig.json) has something to `require()` at runtime instead of
+    // raw .ts files a plain `node dist/index.js` can't load (see
+    // apps/server's Dockerfile for where this actually gets invoked).
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "dist",
+    "rootDir": "src",
+    "noEmit": false,
+    "declaration": true,
+    "paths": {}
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

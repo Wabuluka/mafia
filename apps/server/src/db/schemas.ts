@@ -26,14 +26,16 @@ const VILLAGE_CODE_PATTERN = '^[A-Z0-9]{4}$';
 export const villagesValidator: Document = {
   $jsonSchema: {
     bsonType: 'object',
-    required: ['_id', 'hostId', 'maxPlayers', 'minPlayers', 'playerIds', 'status', 'createdAt', 'lastActivityAt'],
+    required: ['_id', 'name', 'hostId', 'maxPlayers', 'minPlayers', 'playerIds', 'pendingPlayerIds', 'status', 'createdAt', 'lastActivityAt'],
     additionalProperties: false,
     properties: {
       _id: { bsonType: 'string', pattern: VILLAGE_CODE_PATTERN, description: 'village code, 4 uppercase alphanumeric chars' },
+      name: { bsonType: 'string', minLength: 1, maxLength: 40 },
       hostId: { bsonType: 'string' },
       maxPlayers: { bsonType: 'int', minimum: 1 },
       minPlayers: { bsonType: 'int', minimum: 1 },
       playerIds: { bsonType: 'array', items: { bsonType: 'string' } },
+      pendingPlayerIds: { bsonType: 'array', items: { bsonType: 'string' } },
       status: { enum: ['LOBBY', 'IN_GAME', 'CLOSED'] },
       createdAt: { bsonType: 'date' },
       lastActivityAt: { bsonType: 'date' },
@@ -67,7 +69,13 @@ export const gamesValidator: Document = {
         bsonType: 'array',
         items: {
           bsonType: 'object',
-          required: ['id', 'name', 'role', 'status', 'connected', 'isHost', 'isReady', 'joinedAt'],
+          // `role` is NOT required: the host/moderator is deliberately
+          // never assigned one (see Player.isHost's doc comment in
+          // @mafia/shared/entities.ts) — their player document has no
+          // `role` field at all, same as `revealedRole` below, which was
+          // already optional for exactly the same "not every player has
+          // one" reason.
+          required: ['id', 'name', 'status', 'connected', 'isHost', 'isReady', 'joinedAt'],
           properties: {
             id: { bsonType: 'string' },
             name: { bsonType: 'string' },
@@ -112,6 +120,7 @@ export const gameEventsValidator: Document = {
         enum: [
           'NIGHT_ACTION',
           'VOTE',
+          'NOMINATION',
           'CHAT',
           'PHASE_CHANGED',
           'PLAYER_JOINED',

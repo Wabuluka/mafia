@@ -9,7 +9,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { gamesRepository } from '../../db';
+import { gameEventsRepository, gamesRepository } from '../../db';
 import { AppError } from '../errors';
 import { asyncRoute } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
@@ -46,6 +46,43 @@ gamesRouter.get(
         name: p.name,
         role: p.role,
         status: p.status,
+      })),
+    });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/games/:id/events — the full ordered gameEvents log for a
+// finished game, for the post-game timeline (each night's actions, each
+// day's vote breakdown, who voted for whom). Same COMPLETED gate as
+// /summary above and for the same reason: NIGHT_ACTION/VOTE events carry
+// exactly the actor/target detail redactStateFor exists to withhold while
+// a game is still live (e.g. who a mafia player targeted). Once the game
+// has ended there's no one left for that information to be hidden from.
+// ---------------------------------------------------------------------------
+
+gamesRouter.get(
+  '/games/:id/events',
+  validate(GameIdParamsSchema, 'params'),
+  asyncRoute(async (req, res) => {
+    const { id } = req.params as unknown as z.infer<typeof GameIdParamsSchema>;
+    const game = await gamesRepository.findGameById(id);
+    if (!game) {
+      throw new AppError('GAME_NOT_FOUND', `No game found with id ${id}.`);
+    }
+    if (game.status !== 'COMPLETED') {
+      throw new AppError('GAME_NOT_FINISHED', 'This game has not finished yet.');
+    }
+
+    const events = await gameEventsRepository.findEventsForGame(id);
+
+    res.status(200).json({
+      gameId: game._id,
+      events: events.map((e) => ({
+        sequence: e.sequence,
+        type: e.type,
+        payload: e.payload,
+        createdAt: e.createdAt,
       })),
     });
   }),

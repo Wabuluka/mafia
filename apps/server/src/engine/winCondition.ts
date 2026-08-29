@@ -17,15 +17,29 @@ function alivePlayers(state: FullGameState): Player[] {
   return state.players.filter((p) => p.status === 'ALIVE');
 }
 
+/** Returns `undefined` for a player with no role — which, once the game
+ * has started, means exactly one thing: the host/moderator (see
+ * Player.isHost's doc comment in @mafia/shared/entities.ts — the host is
+ * deliberately never assigned a role). This is not an incidental fallback;
+ * it's the actual mechanism by which the host is excluded from every
+ * team-based tally below (`alivePlayers`'s callers all filter by `teamOf`
+ * returning a real team), so a role-less alive host is correctly never
+ * counted toward town/mafia/neutral parity. */
 function teamOf(player: Player): Team | undefined {
   return player.role ? ROLE_TEAM[player.role] : undefined;
 }
 
 /**
  * Evaluates the standard elimination win conditions:
- *   - Mafia reaches parity with (or exceeds) the town: mafia wins. Parity,
- *     not a strict majority, because once mafia >= town the town can no
- *     longer out-vote them even with perfect play.
+ *   - Mafia reaches parity with (or exceeds) town+neutral combined: mafia
+ *     wins. Parity, not a strict majority, because once mafia can no longer
+ *     be out-voted by everyone else combined, town can't win even with
+ *     perfect play. NEUTRAL is deliberately folded in with TOWN on this side
+ *     of the count — a neutral player (e.g. JESTER) isn't on team TOWN, but
+ *     is still a non-mafia vote mafia must out-number, so they count as an
+ *     obstacle to a mafia win exactly like a town player does. This is a
+ *     deliberate ruling, not an oversight — see winCondition.test.ts for a
+ *     case pinning it down.
  *   - All mafia are eliminated: town wins.
  *   - A JESTER's win (getting voted out) is a special case that resolves
  *     immediately when it happens, in the day-vote handler, not here —

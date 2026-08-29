@@ -68,7 +68,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
         aria-modal="true"
         aria-labelledby={titleId}
         className={[
-          'relative flex max-h-[85dvh] flex-col rounded-t-3xl border-t border-white/10 bg-elevated-2 pb-safe-bottom',
+          'relative flex max-h-[85dvh] flex-col rounded-t-3xl border-t border-base-content/10 bg-elevated-2 pb-safe-bottom',
           'animate-sheet-in motion-reduce:animate-none',
         ].join(' ')}
       >
@@ -76,7 +76,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
          * sheet you could swipe" even though swipe-to-dismiss isn't wired
          * up in this pure-presentation pass. */}
         <div className="flex justify-center pt-2.5">
-          <div aria-hidden="true" className="h-1 w-10 rounded-full bg-white/15" />
+          <div aria-hidden="true" className="h-1 w-10 rounded-full bg-base-content/15" />
         </div>
 
         <div className="flex items-center justify-between px-5 pb-2 pt-3">
@@ -87,7 +87,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-base-content/70 active:bg-white/10"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-base-content/5 text-base-content/70 active:bg-base-content/10"
           >
             <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
@@ -97,7 +97,7 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
 
         <div className="overflow-y-auto px-5 pb-4">{children}</div>
 
-        {footer && <div className="border-t border-white/5 px-5 py-3">{footer}</div>}
+        {footer && <div className="border-t border-base-content/10 px-5 py-3">{footer}</div>}
       </div>
     </div>
   );

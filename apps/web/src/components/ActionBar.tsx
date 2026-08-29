@@ -18,7 +18,7 @@ export interface ActionBarProps {
 
 export function ActionBar({ children, caption }: ActionBarProps) {
   return (
-    <div className="border-t border-white/5 bg-elevated pb-safe-bottom">
+    <div className="border-t border-base-content/10 bg-elevated pb-safe-bottom">
       <div className="flex flex-col gap-2 px-4 pt-3">
         {caption && <p className="text-center text-sm text-base-content/60">{caption}</p>}
         <div className="flex gap-2 pb-3">{children}</div>
@@ -39,7 +39,7 @@ export interface ActionButtonProps {
 const VARIANT_CLASSES: Record<NonNullable<ActionButtonProps['variant']>, string> = {
   primary: 'bg-primary text-primary-content active:brightness-90',
   danger: 'bg-danger text-white active:brightness-90',
-  neutral: 'bg-white/10 text-base-content active:bg-white/15',
+  neutral: 'bg-base-content/10 text-base-content active:bg-base-content/15',
 };
 
 /** A tap-target-correct button for use inside ActionBar. Minimum 44px

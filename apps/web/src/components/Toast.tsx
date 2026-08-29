@@ -1,11 +1,21 @@
 'use client';
 
 // ---------------------------------------------------------------------------
-// Toast — a small top-of-screen notification stack, with a Context-based
+// Toast — a single top-of-screen notification, with a Context-based
 // provider so any component can trigger one via `useToast().show(...)`
-// without prop-drilling a callback down through the tree. Stacks (does not
-// replace) multiple toasts, auto-dismisses after a duration, and is
-// dismissible by tap.
+// without prop-drilling a callback down through the tree. Auto-dismisses
+// after a duration, and is dismissible by tap.
+//
+// ONE AT A TIME, BY DESIGN: only ever one toast is shown. A `show()` call
+// while a previous toast is still visible REPLACES it outright (new
+// message, new tone, timer restarted from zero) rather than stacking a
+// second one below/above it — multiple simultaneous alerts were confusing
+// during rapid bursts of events (e.g. several players joining/leaving in
+// quick succession), and a replaced message is assumed less costly than a
+// pile of overlapping ones. If a message is important enough to guarantee
+// the player sees it, don't rely on toast — this is a transient, replaceable
+// notice, not a queue or a log (see GameLog for the persistent equivalent
+// used during a phase).
 // ---------------------------------------------------------------------------
 
 import {
@@ -47,19 +57,27 @@ const TONE_CLASSES: Record<ToastTone, string> = {
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastRecord[]>([]);
+  const [toast, setToast] = useState<ToastRecord | null>(null);
   const nextId = useRef(0);
+  // Tracks the auto-dismiss timer so a new `show()` can cancel whatever
+  // the PREVIOUS toast scheduled — without this, replacing a toast still
+  // visible would leave its old timer running, which could dismiss the
+  // NEW toast early (or, if the new one runs longer, fire harmlessly late,
+  // but the early-dismiss case is the real bug this guards against).
+  const dismissTimer = useRef<number | undefined>(undefined);
 
   const dismiss = useCallback((id: number) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToast((prev) => (prev?.id === id ? null : prev));
   }, []);
 
   const show = useCallback(
     (message: string, options?: ToastOptions) => {
+      window.clearTimeout(dismissTimer.current);
+
       const id = nextId.current++;
       const tone = options?.tone ?? 'info';
-      setToasts((prev) => [...prev, { id, message, tone }]);
-      window.setTimeout(() => dismiss(id), options?.durationMs ?? DEFAULT_DURATION_MS);
+      setToast({ id, message, tone });
+      dismissTimer.current = window.setTimeout(() => dismiss(id), options?.durationMs ?? DEFAULT_DURATION_MS);
     },
     [dismiss],
   );
@@ -70,15 +88,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
 
-      {/* Stack sits below the safe-area top inset, above the app header's
-       * z-index (see AppShell.tsx) so a toast is never hidden behind it. */}
+      {/* Sits below the safe-area top inset, above the app header's
+       * z-index (see AppShell.tsx) so the toast is never hidden behind it.
+       * Keyed by `toast.id` so a replacement re-triggers the entrance
+       * animation instead of the new message silently swapping into the
+       * still-mounted previous toast's element. */}
       <div
-        className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center gap-2 px-4 pt-3"
+        className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center px-4 pt-3"
         style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
         aria-live="polite"
-        aria-atomic="false"
+        aria-atomic="true"
       >
-        {toasts.map((toast) => (
+        {toast && (
           <button
             key={toast.id}
             type="button"
@@ -91,7 +112,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           >
             {toast.message}
           </button>
-        ))}
+        )}
       </div>
     </ToastContext.Provider>
   );

@@ -10,7 +10,13 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react';
-import { DEFAULT_PHASE_DURATIONS_MS, type PlayerId, type PublicPlayer, type VillageCode } from '@mafia/shared';
+import {
+  DEFAULT_PHASE_DURATIONS_MS,
+  type JoinRequest,
+  type PlayerId,
+  type PublicPlayer,
+  type VillageCode,
+} from '@mafia/shared';
 import { ActionButton } from '@/components/ActionBar';
 import { Modal } from '@/components/Modal';
 import { useSocket } from '@/lib/socket-context';
@@ -23,6 +29,12 @@ export interface HostControlsModalProps {
   players: PublicPlayer[];
   selfPlayerId: PlayerId;
   currentDurationsMs: { NIGHT: number; DAY_DISCUSSION: number; DAY_VOTE: number };
+  /** Players currently waiting on approval — see useJoinRequests.ts. Empty
+   * for the entire life of a lobby that never used a shared code (e.g.
+   * still possible via a stale prop during a fast unmount), which just
+   * renders as "no pending requests" rather than needing its own loading
+   * state — the list is always either accurate or empty, never partial. */
+  joinRequests: JoinRequest[];
 }
 
 const DURATION_STEPS_S = [15, 30, 45, 60, 90, 120, 150, 180];
@@ -49,7 +61,7 @@ function DurationRow({
             const prev = DURATION_STEPS_S[Math.max(0, (idx === -1 ? 0 : idx) - 1)]!;
             onChange(prev * 1000);
           }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-lg active:bg-white/10"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-base-content/5 text-lg active:bg-base-content/10"
         >
           −
         </button>
@@ -62,7 +74,7 @@ function DurationRow({
             const next = DURATION_STEPS_S[Math.min(DURATION_STEPS_S.length - 1, (idx === -1 ? 0 : idx) + 1)]!;
             onChange(next * 1000);
           }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-lg active:bg-white/10"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-base-content/5 text-lg active:bg-base-content/10"
         >
           +
         </button>
@@ -78,11 +90,26 @@ export function HostControlsModal({
   players,
   selfPlayerId,
   currentDurationsMs,
+  joinRequests,
 }: HostControlsModalProps) {
   const { emit } = useSocket();
   const toast = useToast();
   const [durations, setDurations] = useState(currentDurationsMs);
   const [kickingId, setKickingId] = useState<PlayerId | null>(null);
+  const [respondingId, setRespondingId] = useState<PlayerId | null>(null);
+
+  async function handleRespond(playerId: PlayerId, name: string, accept: boolean) {
+    setRespondingId(playerId);
+    const result = await emit.respondToJoinRequest({ villageCode, targetPlayerId: playerId, accept });
+    setRespondingId(null);
+    if (!result.ok) {
+      toast.show(result.error.message, { tone: 'danger' });
+    } else if (accept) {
+      toast.show(`${name} was let in.`, { tone: 'success' });
+    } else {
+      toast.show(`${name}'s request was denied.`);
+    }
+  }
 
   async function applyDurations() {
     const result = await emit.updateVillageSettings({ villageCode, phaseDurationsMs: durations });
@@ -110,6 +137,39 @@ export function HostControlsModal({
   return (
     <Modal open={open} onClose={onClose} title="Host controls">
       <div className="flex flex-col gap-6">
+        {joinRequests.length > 0 && (
+          <section>
+            <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-base-content/50">
+              Requesting to join
+            </h3>
+            <ul className="flex flex-col divide-y divide-base-content/10">
+              {joinRequests.map((r) => (
+                <li key={r.playerId} className="flex items-center justify-between gap-2 py-2.5">
+                  <span className="truncate">{r.playerName}</span>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRespond(r.playerId, r.playerName, false)}
+                      disabled={respondingId === r.playerId}
+                      className="min-h-9 rounded-lg bg-base-content/5 px-3 text-sm font-semibold active:bg-base-content/10 disabled:opacity-40"
+                    >
+                      Deny
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRespond(r.playerId, r.playerName, true)}
+                      disabled={respondingId === r.playerId}
+                      className="min-h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-content active:opacity-90 disabled:opacity-40"
+                    >
+                      Accept
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <section>
           <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-base-content/50">
             Phase durations
@@ -149,7 +209,7 @@ export function HostControlsModal({
           {kickablePlayers.length === 0 ? (
             <p className="text-sm text-base-content/50">No other players yet.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-white/5">
+            <ul className="flex flex-col divide-y divide-base-content/10">
               {kickablePlayers.map((p) => (
                 <li key={p.id} className="flex items-center justify-between py-2.5">
                   <span>{p.name}</span>

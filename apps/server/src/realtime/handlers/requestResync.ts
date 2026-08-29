@@ -20,7 +20,7 @@ export function registerRequestResyncHandler(io: GameServer, socket: GameSocket)
     if (!session) return;
     if (!requirePlayerInSession(session, socket.player._id, ack)) return;
 
-    emitStateToPlayer(io, session.state, socket.player._id);
+    emitStateToPlayer(io, session, socket.player._id);
     ackOk(ack);
   });
 }

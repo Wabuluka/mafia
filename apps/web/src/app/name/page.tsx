@@ -13,10 +13,12 @@ import { Suspense, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { ActionBar, ActionButton } from '@/components/ActionBar';
 import { useStoredName } from '@/lib/useStoredName';
+import { useThemeSync } from '@/lib/useThemeSync';
 
 const MAX_NAME_LENGTH = 24;
 
 function NameEntryForm() {
+  useThemeSync('mafia');
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, setStoredName] = useStoredName();
@@ -36,7 +38,7 @@ function NameEntryForm() {
     <AppShell
       header={
         <div className="flex items-center gap-2 px-4 py-3">
-          <button type="button" onClick={() => router.back()} aria-label="Back" className="flex h-9 w-9 items-center justify-center rounded-full active:bg-white/10">
+          <button type="button" onClick={() => router.back()} aria-label="Back" className="flex h-9 w-9 items-center justify-center rounded-full active:bg-base-content/10">
             <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 4l-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -65,7 +67,7 @@ function NameEntryForm() {
           maxLength={MAX_NAME_LENGTH}
           autoFocus
           autoComplete="off"
-          className="min-h-14 rounded-2xl border-2 border-white/10 bg-elevated px-4 text-lg text-base-content outline-none focus:border-primary"
+          className="min-h-14 rounded-2xl border-2 border-base-content/10 bg-elevated px-4 text-lg text-base-content outline-none focus:border-primary"
         />
         <span className="self-end text-xs text-base-content/40">
           {trimmed.length}/{MAX_NAME_LENGTH}

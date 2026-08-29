@@ -17,7 +17,20 @@
 
 import rateLimit, { type Options } from 'express-rate-limit';
 import type { Request } from 'express';
+import { env } from '../../env';
 import { AppError } from '../errors';
+
+// In local dev, a single developer reloading tabs/HMR'ing repeatedly can
+// trivially blow past limits sized for production abuse-prevention (a real
+// browser session fires POST /api/session + GET /api/villages/:code on
+// every mount, and StrictMode/fast-refresh multiplies that further) — none
+// of that is the abuse this limiter exists to catch. Multiplying every
+// limit's `limit` by this factor in development keeps the SAME windows
+// (so the shape of the limiter is still exercised/testable) while making
+// them generous enough not to interrupt normal local testing. Production
+// (and test, so CI/integration tests keep exercising the real limits) are
+// unaffected.
+const DEV_LIMIT_MULTIPLIER = env.NODE_ENV === 'development' ? 20 : 1;
 
 /** express-rate-limit calls this on limit-exceeded; translate into the same
  * AppError -> centralized error handler path everything else uses, instead
@@ -42,14 +55,14 @@ const sharedOptions: Partial<Options> = {
 export const apiRateLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: 60 * DEV_LIMIT_MULTIPLIER,
 });
 
 /** Stricter per-IP limiter specifically for village creation. */
 export const createVillageIpRateLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 10 * 60 * 1000,
-  limit: 10,
+  limit: 10 * DEV_LIMIT_MULTIPLIER,
 });
 
 /** Per-session limiter for village creation — keyed on the session cookie's
@@ -61,6 +74,6 @@ export const createVillageIpRateLimiter = rateLimit({
 export const createVillageSessionRateLimiter = rateLimit({
   ...sharedOptions,
   windowMs: 10 * 60 * 1000,
-  limit: 5,
+  limit: 5 * DEV_LIMIT_MULTIPLIER,
   keyGenerator: (req: Request) => req.player?._id ?? 'no-session',
 });

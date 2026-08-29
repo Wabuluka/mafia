@@ -9,6 +9,7 @@
 
 import { MongoClient, MongoServerError, type Db } from 'mongodb';
 import { env } from '../env';
+import { logger } from '../logger';
 
 const MAX_CONNECT_ATTEMPTS = 5;
 const BASE_BACKOFF_MS = 500;
@@ -52,33 +53,31 @@ async function connectWithRetry(): Promise<Db> {
       await newClient.db().command({ ping: 1 });
       client = newClient;
       db = newClient.db();
-      // eslint-disable-next-line no-console
-      console.log(`[db] connected to MongoDB (attempt ${attempt}/${MAX_CONNECT_ATTEMPTS})`);
+      logger.info('connected to MongoDB', { attempt, maxAttempts: MAX_CONNECT_ATTEMPTS });
       return db;
     } catch (err) {
       if (isFatalAuthError(err)) {
         await newClient.close().catch(() => undefined);
         // Fail fast and loud: bad credentials should crash boot, not retry
         // silently into a confusing timeout five attempts later.
-        // eslint-disable-next-line no-console
-        console.error('[db] FATAL: MongoDB authentication/authorization failed. Check MONGO_URI credentials.');
+        logger.error('FATAL: MongoDB authentication/authorization failed. Check MONGO_URI credentials.');
         throw err;
       }
 
       if (attempt === MAX_CONNECT_ATTEMPTS) {
         await newClient.close().catch(() => undefined);
-        // eslint-disable-next-line no-console
-        console.error(`[db] FATAL: could not connect to MongoDB after ${MAX_CONNECT_ATTEMPTS} attempts.`);
+        logger.error('FATAL: could not connect to MongoDB', { attempts: MAX_CONNECT_ATTEMPTS });
         throw err;
       }
 
       const backoffMs = Math.min(BASE_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
       const jitterMs = Math.floor(Math.random() * 250);
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[db] connection attempt ${attempt}/${MAX_CONNECT_ATTEMPTS} failed, retrying in ${backoffMs + jitterMs}ms`,
-        err instanceof Error ? err.message : err,
-      );
+      logger.warn('MongoDB connection attempt failed, retrying', {
+        attempt,
+        maxAttempts: MAX_CONNECT_ATTEMPTS,
+        retryInMs: backoffMs + jitterMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
       await sleep(backoffMs + jitterMs);
     }
   }
@@ -107,11 +106,9 @@ export async function closeDb(): Promise<void> {
   const closing = client;
   client = undefined;
   db = undefined;
-  // eslint-disable-next-line no-console
-  console.log('[db] closing MongoDB connection pool...');
+  logger.info('closing MongoDB connection pool...');
   await closing.close();
-  // eslint-disable-next-line no-console
-  console.log('[db] MongoDB connection pool closed.');
+  logger.info('MongoDB connection pool closed.');
 }
 
 let shutdownHooked = false;
@@ -134,18 +131,19 @@ export function registerGracefulShutdown(beforeClose?: () => Promise<void>): voi
   shutdownHooked = true;
 
   const shutdown = (signal: string) => {
-    // eslint-disable-next-line no-console
-    console.log(`[db] received ${signal}, shutting down gracefully...`);
+    logger.info('received shutdown signal, shutting down gracefully...', { signal });
     Promise.resolve(beforeClose?.())
       .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error('[db] error running pre-shutdown hook, continuing shutdown anyway', err);
+        logger.error('error running pre-shutdown hook, continuing shutdown anyway', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       })
       .then(() => closeDb())
       .then(() => process.exit(0))
       .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error('[db] error during shutdown, forcing exit', err);
+        logger.error('error during shutdown, forcing exit', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         process.exit(1);
       });
   };

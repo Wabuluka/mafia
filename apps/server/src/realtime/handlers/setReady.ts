@@ -29,7 +29,7 @@ export function registerSetReadyHandler(io: GameServer, socket: GameSocket): voi
     };
 
     await villagesRepository.touchVillageActivity(parsed.villageCode);
-    broadcastStateToVillage(io, session.state);
+    broadcastStateToVillage(io, session);
     ackOk(ack);
   });
 }

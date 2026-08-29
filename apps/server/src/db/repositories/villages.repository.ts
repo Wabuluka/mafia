@@ -14,6 +14,7 @@ function collection() {
 
 export interface CreateVillageInput {
   code: VillageCode;
+  name: string;
   hostId: PlayerId;
   maxPlayers: number;
   minPlayers: number;
@@ -25,10 +26,12 @@ export async function createVillage(input: CreateVillageInput): Promise<VillageD
   const now = new Date();
   const doc: VillageDocument = {
     _id: input.code,
+    name: input.name,
     hostId: input.hostId,
     maxPlayers: input.maxPlayers,
     minPlayers: input.minPlayers,
     playerIds: [input.hostId],
+    pendingPlayerIds: [],
     status: 'LOBBY',
     createdAt: now,
     lastActivityAt: now,
@@ -58,6 +61,49 @@ export async function removePlayerFromVillage(code: VillageCode, playerId: Playe
     { _id: code },
     { $pull: { playerIds: playerId }, $set: { lastActivityAt: new Date() } },
   );
+}
+
+/** Adds a NEW player to the pending (awaiting host approval) list —
+ * distinct from `addPlayerToVillage`, which admits straight into the live
+ * roster. See VillageDocument.pendingPlayerIds's own doc comment. */
+export async function addPendingPlayer(code: VillageCode, playerId: PlayerId): Promise<void> {
+  const col = await collection();
+  await col.updateOne(
+    { _id: code },
+    { $addToSet: { pendingPlayerIds: playerId }, $set: { lastActivityAt: new Date() } },
+  );
+}
+
+/** Removes a player from the pending list without admitting them — a deny,
+ * or cleanup if they disconnect/the village closes before the host
+ * responds. No-op if they were never pending. */
+export async function removePendingPlayer(code: VillageCode, playerId: PlayerId): Promise<void> {
+  const col = await collection();
+  await col.updateOne(
+    { _id: code },
+    { $pull: { pendingPlayerIds: playerId }, $set: { lastActivityAt: new Date() } },
+  );
+}
+
+/** Accepts a pending player: atomically moves them from `pendingPlayerIds`
+ * into `playerIds` in one write, so a concurrent read of the document can
+ * never observe them in neither list nor both. Returns the updated
+ * document so the caller (respondToJoinRequest.ts) has the fresh
+ * maxPlayers/playerIds without a second round trip — capacity is checked
+ * by the caller BEFORE calling this, but the fresh count is still useful
+ * for the broadcast that follows. */
+export async function promotePendingPlayer(code: VillageCode, playerId: PlayerId): Promise<VillageDocument | null> {
+  const col = await collection();
+  const result = await col.findOneAndUpdate(
+    { _id: code },
+    {
+      $pull: { pendingPlayerIds: playerId },
+      $addToSet: { playerIds: playerId },
+      $set: { lastActivityAt: new Date() },
+    },
+    { returnDocument: 'after' },
+  );
+  return result;
 }
 
 /** Bumps `lastActivityAt` without any other change — call on any lobby

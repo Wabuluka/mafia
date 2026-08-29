@@ -10,7 +10,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { playersRepository } from '../../db';
 import { asyncRoute } from '../middleware/errorHandler';
-import { generateSessionToken, setSessionCookie, SESSION_COOKIE_NAME } from '../middleware/session';
+import { clearSessionCookie, generateSessionToken, setSessionCookie, SESSION_COOKIE_NAME } from '../middleware/session';
 import { validate } from '../middleware/validate';
 
 const CreateSessionBodySchema = z.object({
@@ -45,6 +45,20 @@ sessionRouter.post(
     res.status(201).json({ playerId: player._id, displayName: player.displayName, resumed: false });
   }),
 );
+
+// DELETE /api/session — clears the session cookie so a stale/expired
+// identity stops being resent by the browser on every subsequent request.
+// Not tied to any server-side revocation (players are anonymous with no
+// reuse-across-devices concern here — see players.repository.ts's module
+// header): this is purely "stop the browser from holding onto a cookie
+// that no longer resolves to anything useful", not a security boundary.
+// Always succeeds, even with no session present, so a client can call this
+// unconditionally as a "reset my identity" action without first checking
+// whether it's currently logged in.
+sessionRouter.delete('/session', (_req, res) => {
+  clearSessionCookie(res);
+  res.status(204).end();
+});
 
 // Exported for the rest of the router tree / tests that need the cookie
 // name without importing the whole session middleware module.

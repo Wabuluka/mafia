@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <circle cx="256" cy="256" r="256" fill="#0b0d12" />
+
+  <!-- Hooded silhouette, amber on near-black, extending the icon language
+       used for the Mafia role elsewhere in the app (see HowToPlayModal.tsx's
+       MafiaIcon / Home page's hero mark) into a standalone app logo/favicon.
+       Head + shoulders read as a distinct figure at every size; eyes sit
+       centered on the face, not the neckline. -->
+
+  <!-- Shoulders / cloak -->
+  <path
+    d="M256 246
+       C 194 246, 144 292, 144 350
+       L 144 400
+       C 144 412, 154 422, 166 422
+       L 346 422
+       C 358 422, 368 412, 368 400
+       L 368 350
+       C 368 292, 318 246, 256 246 Z"
+    fill="#e0a94d"
+  />
+
+  <!-- Head -->
+  <circle cx="256" cy="196" r="80" fill="#e0a94d" />
+
+  <!-- Eyes -->
+  <circle cx="228" cy="200" r="14" fill="#0b0d12" />
+  <circle cx="284" cy="200" r="14" fill="#0b0d12" />
+</svg>

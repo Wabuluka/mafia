@@ -61,7 +61,7 @@ export function DetectiveResultCard({ results, players }: DetectiveResultCardPro
           <h3 className="text-sm font-semibold uppercase tracking-wide text-base-content/50">
             Investigation history
           </h3>
-          <ul className="flex flex-col divide-y divide-white/5 rounded-2xl bg-elevated px-4">
+          <ul className="flex flex-col divide-y divide-base-content/10 rounded-2xl bg-elevated px-4">
             {history.map((r) => (
               <li key={`${r.targetId}-${r.nightNumber}`} className="flex items-center justify-between py-2.5 text-sm">
                 <span className="text-base-content/70">

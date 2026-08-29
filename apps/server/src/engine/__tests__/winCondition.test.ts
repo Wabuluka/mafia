@@ -52,6 +52,22 @@ describe('checkWinCondition', () => {
     expect(verdict).toEqual({ isOver: false });
   });
 
+  it('never counts an alive host/moderator toward any team\'s tally', () => {
+    // 1 mafia vs 1 town, plus an alive, role-less host — if the host were
+    // ever counted, this would look like a 1v2 town lead and the game
+    // would continue; instead it must resolve as exact parity (mafia wins)
+    // since the host is invisible to every team tally.
+    const state = buildState({
+      players: [
+        { id: 'host', name: 'Host', isHost: true },
+        { id: 'mafia1', name: 'M', role: 'MAFIA' },
+        { id: 'v1', name: 'A', role: 'VILLAGER' },
+      ],
+    });
+    const verdict = checkWinCondition(state);
+    expect(verdict).toEqual({ isOver: true, reason: 'MAFIA_WIN', winningTeam: 'MAFIA' });
+  });
+
   it('counts a neutral (jester) toward the non-mafia side for parity purposes', () => {
     // 1 mafia vs 1 jester alive: mafia is NOT yet at parity because the
     // jester still counts as a non-mafia vote against them.
@@ -64,6 +80,22 @@ describe('checkWinCondition', () => {
     });
     const verdict = checkWinCondition(state);
     expect(verdict.isOver).toBe(false);
+  });
+
+  it('mafia reaches parity when town+neutral combined equals mafia, even with zero town left', () => {
+    // 1 mafia vs 1 jester and no town at all: mafia is still at parity
+    // against the *combined* non-mafia count, not against town alone —
+    // pins down that NEUTRAL is folded into the parity check deliberately
+    // (see the doc comment on checkWinCondition), not just "reduces the
+    // threshold town needs to hit."
+    const state = buildState({
+      players: [
+        { id: 'mafia1', name: 'M', role: 'MAFIA' },
+        { id: 'jester1', name: 'J', role: 'JESTER' },
+      ],
+    });
+    const verdict = checkWinCondition(state);
+    expect(verdict).toEqual({ isOver: true, reason: 'MAFIA_WIN', winningTeam: 'MAFIA' });
   });
 });
 

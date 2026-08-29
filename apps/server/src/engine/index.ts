@@ -30,6 +30,13 @@ export {
 } from './assignRoles';
 export { applyNightAction, resolveNight, type SubmitNightActionInput } from './nightActions';
 export { castVote, resolveVote, ABSTAIN, type CastVoteInput, type VoteTarget } from './voting';
+export {
+  nominate,
+  resolveNominations,
+  DECLINE,
+  type SubmitNominationInput,
+  type NominationTarget,
+} from './nominations';
 export { checkWinCondition, checkJesterWin, type WinVerdict } from './winCondition';
 export { redactStateFor } from './redact';
 export { createRng, shuffle, type Rng } from './rng';

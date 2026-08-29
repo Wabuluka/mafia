@@ -17,6 +17,7 @@ import { createVillageIpRateLimiter, createVillageSessionRateLimiter } from '../
 import { requireSession } from '../middleware/session';
 import { validate } from '../middleware/validate';
 import { generateUniqueVillageCode } from '../villageCode';
+import { generateDefaultVillageName } from '../villageName';
 
 export const villagesRouter = Router();
 
@@ -32,6 +33,11 @@ function requirePlayer(req: Request): PlayerDocument {
 }
 
 const CreateVillageBodySchema = z.object({
+  // Purely cosmetic (see VillageDocument.name's doc comment) — omitted
+  // entirely gets a generated default (generateDefaultVillageName) rather
+  // than being required, so "just create a village" stays a one-tap action
+  // for a host who doesn't care to name it.
+  name: z.string().trim().min(1).max(40).optional(),
   maxPlayers: z.number().int().min(MIN_PLAYERS).max(MAX_PLAYERS).default(MAX_PLAYERS),
   minPlayers: z.number().int().min(MIN_PLAYERS).max(MAX_PLAYERS).default(MIN_PLAYERS),
 });
@@ -52,6 +58,7 @@ villagesRouter.post(
     const code = await generateUniqueVillageCode();
     const village = await villagesRepository.createVillage({
       code,
+      name: body.name ?? generateDefaultVillageName(),
       hostId,
       maxPlayers: body.maxPlayers,
       minPlayers: body.minPlayers,
@@ -59,6 +66,7 @@ villagesRouter.post(
 
     res.status(201).json({
       code: village._id,
+      name: village.name,
       hostId: village.hostId,
       maxPlayers: village.maxPlayers,
       minPlayers: village.minPlayers,
@@ -89,6 +97,7 @@ villagesRouter.get(
 
     res.status(200).json({
       code: village._id,
+      name: village.name,
       status: village.status,
       playerCount: village.playerIds.length,
       maxPlayers: village.maxPlayers,
@@ -110,21 +119,57 @@ villagesRouter.post(
     if (!village) {
       throw new AppError('VILLAGE_NOT_FOUND', `No village found with code ${code}.`);
     }
-    if (village.status === 'IN_GAME') {
-      throw new AppError('GAME_IN_PROGRESS', 'This village already has a game in progress.');
-    }
     if (village.status === 'CLOSED') {
       throw new AppError('VILLAGE_NOT_FOUND', `No village found with code ${code}.`);
     }
 
     const playerId = requirePlayer(req)._id;
     const alreadyMember = village.playerIds.includes(playerId);
+    const alreadyPending = village.pendingPlayerIds.includes(playerId);
+
+    // A game already IN_GAME only blocks a genuinely NEW player from
+    // joining — someone already on the roster (e.g. their tab closed/
+    // crashed mid-game and they're coming back in via the Join screen
+    // rather than a bookmarked /game/:code link) is reconnecting to a
+    // game they're already part of, not joining a new one, and must be
+    // let back in. The realtime layer already treats this identically —
+    // joinVillage.ts's own membership check has never distinguished "mid-
+    // game" from "lobby" for an existing member — this route was the only
+    // place still rejecting the resume case outright.
+    if (village.status === 'IN_GAME' && !alreadyMember) {
+      throw new AppError('GAME_IN_PROGRESS', 'This village already has a game in progress.');
+    }
+
+    // Capacity is checked against APPROVED members only — a pile of
+    // pending requests never blocks the lobby from filling with players
+    // the host has actually accepted (see VillageDocument.pendingPlayerIds's
+    // doc comment). The host is still free to deny the excess once over
+    // capacity; this route doesn't pre-emptively reject a request just
+    // because pending + approved together exceed maxPlayers.
     if (!alreadyMember && village.playerIds.length >= village.maxPlayers) {
       throw new AppError('VILLAGE_FULL', 'This village is already at capacity.');
     }
 
-    if (!alreadyMember) {
-      await villagesRepository.addPlayerToVillage(code, playerId);
+    // HOST APPROVAL GATE: a genuinely new player joining a still-open
+    // LOBBY is held in pendingPlayerIds rather than admitted outright —
+    // see VillageDocument.pendingPlayerIds's doc comment for why this is a
+    // Mongo-persisted field (survives a page reload while waiting) rather
+    // than purely a socket-session concept. An already-pending player
+    // re-POSTing (e.g. a retried request) is idempotent, not re-queued.
+    // The village's OWN HOST is always exempt — they're already a member
+    // from village creation (`alreadyMember` covers them), so this branch
+    // is unreachable for them regardless.
+    if (!alreadyMember && !alreadyPending) {
+      await villagesRepository.addPendingPlayer(code, playerId);
+      res.status(200).json({
+        code: village._id,
+        name: village.name,
+        status: 'PENDING' as const,
+        playerCount: village.playerIds.length,
+        maxPlayers: village.maxPlayers,
+        minPlayers: village.minPlayers,
+      });
+      return;
     }
 
     const updated = await villagesRepository.findVillageByCode(code);
@@ -135,9 +180,14 @@ villagesRouter.post(
       throw new AppError('VILLAGE_NOT_FOUND', `No village found with code ${code}.`);
     }
 
+    // Reached for: an existing member resuming (approved already, above),
+    // or a still-pending player re-POSTing before the host has responded —
+    // the latter reports PENDING again rather than falling through to the
+    // approved-member response shape.
     res.status(200).json({
       code: updated._id,
-      status: updated.status,
+      name: updated.name,
+      status: alreadyMember ? updated.status : ('PENDING' as const),
       playerCount: updated.playerIds.length,
       maxPlayers: updated.maxPlayers,
       minPlayers: updated.minPlayers,

@@ -8,31 +8,20 @@
 
 import type { FullGameState } from '@mafia/shared';
 
-const NIGHT_ACTING_ROLES = new Set(['MAFIA', 'DOCTOR', 'DETECTIVE']);
-
 /**
- * True once every living player whose role acts at night has submitted a
- * night action for the current round. "All mafia agreed" specifically
- * means every living MAFIA member has submitted (they may target different
- * players mid-deliberation — resolveNight already takes the LAST mafia
- * submission as the agreed kill, see engine/nightActions.ts — but the
- * phase shouldn't advance until each of them has actively weighed in at
- * least once, not just one of several).
+ * True once NIGHT's moderator-driven sub-sequence (MAFIA -> DETECTIVE ->
+ * DOCTOR, skipping roles no living player holds — see @mafia/shared's
+ * nextApplicableNightSubPhase) has reached COMPLETE. Sub-phases only
+ * advance via the host's explicit `advanceNightSubPhase` action (see that
+ * handler), not automatically the instant a role submits — so in practice
+ * this is only ever true right as that handler itself steps into COMPLETE,
+ * which is also the one place that calls `tryResolveEarly`/`advancePhase`
+ * for NIGHT. Kept as its own function (rather than inlined there) so
+ * `isPhaseReadyToResolveEarly` stays the single, general "is this phase
+ * done" query other callers can rely on.
  */
 export function isNightResolutionReady(state: FullGameState): boolean {
-  if (state.phase !== 'NIGHT') return false;
-
-  const actingPlayers = state.players.filter((p) => p.status === 'ALIVE' && p.role && NIGHT_ACTING_ROLES.has(p.role));
-  if (actingPlayers.length === 0) {
-    // No living role that acts at night exists (edge case — e.g. every
-    // special role has died and only villagers remain). Nothing to wait
-    // for; the phase is vacuously ready to resolve early.
-    return true;
-  }
-
-  return actingPlayers.every((p) =>
-    state.nightActions.some((a) => a.actorId === p.id && a.nightNumber === state.roundNumber),
-  );
+  return state.phase === 'NIGHT' && state.nightSubPhase === 'COMPLETE';
 }
 
 /**
@@ -44,7 +33,11 @@ export function isNightResolutionReady(state: FullGameState): boolean {
 export function isVoteResolutionReady(state: FullGameState): boolean {
   if (state.phase !== 'DAY_VOTE') return false;
 
-  const livingPlayers = state.players.filter((p) => p.status === 'ALIVE');
+  // The host/moderator never votes (see Player.isHost's doc comment) and
+  // must be excluded from "who must act" here — otherwise a phase with an
+  // alive host would never resolve early, since a vote from them can never
+  // arrive (castVote itself rejects it — see engine/voting.ts).
+  const livingPlayers = state.players.filter((p) => p.status === 'ALIVE' && !p.isHost);
   if (livingPlayers.length === 0) return true; // vacuously ready; shouldn't happen in practice
 
   return livingPlayers.every((p) =>
@@ -52,11 +45,28 @@ export function isVoteResolutionReady(state: FullGameState): boolean {
   );
 }
 
+/**
+ * True once every living player has submitted a nomination (or an explicit
+ * decline — both count, per engine/nominations.ts's Nomination shape,
+ * mirroring how an abstained Vote still counts as "voted" above) for the
+ * current DAY_DISCUSSION round.
+ */
+export function isNominationResolutionReady(state: FullGameState): boolean {
+  if (state.phase !== 'DAY_DISCUSSION') return false;
+
+  // Same host exclusion as isVoteResolutionReady above — see its comment.
+  const livingPlayers = state.players.filter((p) => p.status === 'ALIVE' && !p.isHost);
+  if (livingPlayers.length === 0) return true; // vacuously ready; shouldn't happen in practice
+
+  return livingPlayers.every((p) =>
+    state.nominations.some((n) => n.nominatorId === p.id && n.dayNumber === state.roundNumber),
+  );
+}
+
 /** True if the current phase's required actions are all in and it should
- * advance immediately rather than waiting for its timer. DAY_DISCUSSION
- * has no required actions (it's pure deliberation) so it never resolves
- * early — LOBBY and GAME_OVER aren't timer-driven at all (see
- * scheduler.ts / phaseLoop.ts) and also never qualify. */
+ * advance immediately rather than waiting for its timer. LOBBY and
+ * GAME_OVER aren't timer-driven at all (see scheduler.ts / phaseLoop.ts)
+ * and never qualify. */
 export function isPhaseReadyToResolveEarly(state: FullGameState): boolean {
-  return isNightResolutionReady(state) || isVoteResolutionReady(state);
+  return isNightResolutionReady(state) || isVoteResolutionReady(state) || isNominationResolutionReady(state);
 }

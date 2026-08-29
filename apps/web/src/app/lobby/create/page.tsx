@@ -13,8 +13,10 @@ import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { ApiError, createOrResumeSession, createVillage } from '@/lib/api';
 import { useStoredName } from '@/lib/useStoredName';
+import { useThemeSync } from '@/lib/useThemeSync';
 
 export default function CreateVillagePage() {
+  useThemeSync('mafia');
   const router = useRouter();
   const [storedName] = useStoredName();
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export default function CreateVillagePage() {
             <button
               type="button"
               onClick={() => router.push('/')}
-              className="min-h-11 rounded-xl bg-white/10 px-5 text-base font-semibold active:bg-white/15"
+              className="min-h-11 rounded-xl bg-base-content/10 px-5 text-base font-semibold active:bg-base-content/15"
             >
               Back to Home
             </button>

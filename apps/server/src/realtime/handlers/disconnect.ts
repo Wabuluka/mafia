@@ -20,11 +20,20 @@
 // alone on disconnect — the host role has no special power mid-game beyond
 // having started it, and reshuffling it mid-phase would be a stranger,
 // riskier change than this pass needs to make.
+//
+// Pending join requests: a player who closes their tab while still
+// waiting on host approval was never added to `session.sockets` (see
+// requestToJoin.ts — only an ACCEPTED player joins the real roster), so
+// the roster-disconnect logic below never sees them at all. Handled as its
+// own pass over `session.pendingRequests` instead — silently dropping
+// their request rather than leaving a stale entry the host would see and
+// approve into a nobody.
 // ---------------------------------------------------------------------------
 
 import { villagesRepository } from '../../db';
 import { broadcastStateToVillage, type GameServer, type GameSocket } from '../emit';
-import { transferHostIfNeeded } from '../lobbyManagement';
+import { broadcastJoinRequests } from '../joinRequests';
+import { ensureLobbyHasHost, transferHostIfNeeded } from '../lobbyManagement';
 import { villageManager } from '../VillageManager';
 
 export function registerDisconnectHandler(io: GameServer, socket: GameSocket): void {
@@ -33,6 +42,13 @@ export function registerDisconnectHandler(io: GameServer, socket: GameSocket): v
     if (!player) return; // shouldn't happen post-handshake-auth, but never throw from a disconnect handler
 
     for (const session of villageManager.all()) {
+      const pending = session.pendingRequests.get(player._id);
+      if (pending && pending.socketId === socket.id) {
+        session.pendingRequests.delete(player._id);
+        void villagesRepository.removePendingPlayer(session.villageCode, player._id);
+        broadcastJoinRequests(io, session);
+      }
+
       const registeredSocketId = session.sockets.get(player._id);
       // Only clear this session's membership if THIS socket was the one
       // registered for the player — if they've already reconnected with a
@@ -50,11 +66,17 @@ export function registerDisconnectHandler(io: GameServer, socket: GameSocket): v
         players: session.state.players.map((p) => (p.id === player._id ? { ...p, connected: false } : p)),
       };
 
+      // transferHostIfNeeded only covers the departing HOST's own handoff;
+      // ensureLobbyHasHost is the backstop for the "nobody eligible at
+      // that moment" branch (transferHostIfNeeded leaves the lobby
+      // hostless rather than force a handoff to a disconnected player) and
+      // for a host that was ALREADY unreachable for an unrelated reason —
+      // see its own doc comment on lobbyManagement.ts.
       session.state = session.state.phase === 'LOBBY'
-        ? transferHostIfNeeded(disconnectedState, player._id)
+        ? ensureLobbyHasHost(transferHostIfNeeded(disconnectedState, player._id))
         : disconnectedState;
 
-      broadcastStateToVillage(io, session.state);
+      broadcastStateToVillage(io, session);
 
       if (session.state.phase === 'LOBBY') {
         const newHost = session.state.players.find((p) => p.isHost);

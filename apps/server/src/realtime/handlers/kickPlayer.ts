@@ -41,6 +41,15 @@ export function registerKickPlayerHandler(io: GameServer, socket: GameSocket): v
       return;
     }
 
+    // Mongo is updated FIRST and awaited before the in-memory roster is
+    // touched: this is the roster's own point of truth for other handlers
+    // (e.g. respondToJoinRequest's capacity check reads `villagesRepository`
+    // directly, not `session.state`), so leaving Mongo stale while memory has
+    // already dropped the player would let a same-tick accept see a
+    // not-yet-decremented count and wrongly reject as VILLAGE_FULL right
+    // after a kick freed a slot.
+    await villagesRepository.removePlayerFromVillage(parsed.villageCode, parsed.targetPlayerId);
+
     session.state = {
       ...session.state,
       players: session.state.players.filter((p) => p.id !== parsed.targetPlayerId),
@@ -48,8 +57,6 @@ export function registerKickPlayerHandler(io: GameServer, socket: GameSocket): v
 
     const targetSocketId = session.sockets.get(parsed.targetPlayerId);
     session.sockets.delete(parsed.targetPlayerId);
-
-    await villagesRepository.removePlayerFromVillage(parsed.villageCode, parsed.targetPlayerId);
 
     // Evict the kicked player's socket from the village's channels so they
     // stop receiving broadcasts for a village they're no longer in — kicking
@@ -67,7 +74,7 @@ export function registerKickPlayerHandler(io: GameServer, socket: GameSocket): v
       reason: 'KICKED',
     });
 
-    broadcastStateToVillage(io, session.state);
+    broadcastStateToVillage(io, session);
     ackOk(ack);
   });
 }

@@ -1,10 +1,16 @@
 import type { Phase, Role, Team } from './enums';
 
 // ---------------------------------------------------------------------------
-// Player count limits
+// Player count limits — count NON-MODERATOR participants only (players
+// with `participatesInGame: true`, see entities.ts's Player schema). The
+// moderator/host never receives a role and is not counted here, so the
+// practical minimum village size is MIN_PLAYERS + 1 humans (participants
+// plus the moderator). Lowered from 5 to 4 specifically to keep that total
+// at 5 — the same practical minimum as before the moderator became a pure
+// non-playing role, rather than silently requiring a 6th person to start.
 // ---------------------------------------------------------------------------
 
-export const MIN_PLAYERS = 5;
+export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 15;
 
 // ---------------------------------------------------------------------------
@@ -66,6 +72,7 @@ export function roleLabel(role: Role): string {
 export type RoleDistribution = Readonly<Partial<Record<Role, number>>>;
 
 export const DEFAULT_ROLE_DISTRIBUTION: Readonly<Record<number, RoleDistribution>> = {
+  4: { MAFIA: 1, DETECTIVE: 1, DOCTOR: 1 },
   5: { MAFIA: 1, DETECTIVE: 1, DOCTOR: 1 },
   6: { MAFIA: 1, DETECTIVE: 1, DOCTOR: 1 },
   7: { MAFIA: 2, DETECTIVE: 1, DOCTOR: 1 },

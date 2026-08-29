@@ -43,6 +43,13 @@ export function castVote(state: FullGameState, input: CastVoteInput): EngineResu
   if (voter.status === 'DEAD') {
     return reject('PLAYER_DEAD', 'Dead players cannot vote.');
   }
+  // The host/moderator never votes — see Player.isHost's doc comment.
+  // Structurally near-impossible to reach (VotingPhase.tsx excludes the
+  // host from ever rendering its own action bar), checked here too for
+  // the same defense-in-depth reason as the DEAD check above.
+  if (voter.isHost) {
+    return reject('NOT_A_PARTICIPANT', 'The moderator does not vote.');
+  }
 
   const targetId = input.target === ABSTAIN ? undefined : input.target;
   if (targetId !== undefined) {
@@ -52,6 +59,21 @@ export function castVote(state: FullGameState, input: CastVoteInput): EngineResu
     }
     if (target.status === 'DEAD') {
       return reject('TARGET_DEAD', 'Cannot vote to eliminate a player who is already dead.');
+    }
+    if (target.isHost) {
+      return reject('NOT_A_PARTICIPANT', 'Cannot vote to eliminate the moderator.');
+    }
+    // Only a shortlisted player may be voted on — see engine/
+    // nominations.ts's resolveNominations, which always leaves
+    // `shortlistedIds` non-empty by the time DAY_VOTE is reachable
+    // (falling back to every living player if nobody nominated anyone).
+    // The `length > 0` guard is defensive only, for a DAY_VOTE state
+    // somehow reached without going through resolveNominations first
+    // (e.g. a hand-built test fixture) — it deliberately does NOT change
+    // behavior for any real game state, which never has an empty
+    // shortlist during DAY_VOTE.
+    if (state.shortlistedIds.length > 0 && !state.shortlistedIds.includes(targetId)) {
+      return reject('INVALID_TARGET', 'Only a shortlisted player can be voted on.');
     }
   }
 
@@ -110,16 +132,33 @@ export function resolveVote(state: FullGameState): Resolution {
 
   if (eliminatedId !== undefined) {
     const eliminated = state.players.find((p) => p.id === eliminatedId);
-    players = players.map((p) => (p.id === eliminatedId ? { ...p, status: 'DEAD' } : p));
-    effects.push({ type: 'PLAYER_DIED', playerId: eliminatedId, cause: 'VOTE_ELIMINATION' });
+    if (eliminated?.role) {
+      // Same public-reveal rule as a night death — see resolveNight's
+      // comment in engine/nightActions.ts.
+      players = players.map((p) =>
+        p.id === eliminatedId ? { ...p, status: 'DEAD', revealedRole: eliminated.role } : p,
+      );
+      effects.push({ type: 'PLAYER_DIED', playerId: eliminatedId, role: eliminated.role, cause: 'VOTE_ELIMINATION' });
+      effects.push({
+        type: 'NARRATION',
+        text: `The town has voted to eliminate ${eliminated.name}.`,
+      });
+    }
+  } else if (tied) {
+    // `tied` is only true here when there WAS a genuine tie for the lead
+    // (see the tally loop above) — an all-abstain round also leaves
+    // `eliminatedId` undefined but with `tied` false (handled below), and
+    // gets its own, less dramatic narration rather than being lumped in
+    // as a "tie."
+    effects.push({ type: 'VOTE_TIED' });
     effects.push({
       type: 'NARRATION',
-      text: `The town has voted to eliminate ${eliminated?.name ?? 'a player'}.`,
+      text: 'The vote ended in a tie. No one is eliminated today.',
     });
   } else {
     effects.push({
       type: 'NARRATION',
-      text: 'The vote ended in a tie. No one is eliminated today.',
+      text: 'No votes were cast. No one is eliminated today.',
     });
   }
 

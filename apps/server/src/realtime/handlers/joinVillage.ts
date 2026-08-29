@@ -12,6 +12,7 @@ import { brandFullGameState, JoinVillagePayloadSchema, type PlayerId, type Villa
 import { villagesRepository } from '../../db';
 import { gameVillage, playerChannel, broadcastStateToVillage, type GameServer, type GameSocket } from '../emit';
 import { ackError, ackOk, parseOrAck, type HandlerAck } from '../handlerContext';
+import { ensureLobbyHasHost } from '../lobbyManagement';
 import { villageManager, type GameSession } from '../VillageManager';
 
 export function registerJoinVillageHandler(io: GameServer, socket: GameSocket): void {
@@ -46,6 +47,27 @@ export function registerJoinVillageHandler(io: GameServer, socket: GameSocket): 
       villageManager.create(session);
     }
 
+    // Multi-tab/multi-device lockout: `session.sockets` holds AT MOST one
+    // socket id per player (see VillageManager.ts's doc comment on that
+    // field). If this player already has a DIFFERENT socket registered —
+    // a second tab, or the same tab after a silent reconnect the old
+    // socket never noticed — evict the old one explicitly rather than
+    // letting `session.sockets.set` below silently clobber the map entry
+    // while the old socket keeps sitting in `player:<id>`'s room, still
+    // receiving live state and still able to submit actions. The evicted
+    // socket gets a dedicated `sessionSuperseded` notice (see its schema
+    // doc in @mafia/shared/events.ts) so the client can show a clear,
+    // terminal "opened elsewhere" message instead of treating this like a
+    // normal drop-and-retry disconnect.
+    const previousSocketId = session.sockets.get(player._id);
+    if (previousSocketId && previousSocketId !== socket.id) {
+      const previousSocket = io.sockets.sockets.get(previousSocketId);
+      if (previousSocket) {
+        previousSocket.emit('sessionSuperseded', { villageCode: parsed.villageCode });
+        previousSocket.disconnect(true);
+      }
+    }
+
     // Idempotent: reconnecting (or double-emitting joinVillage) just re-adds
     // the same player, which is a no-op past the first time.
     if (!session.state.players.some((p) => p.id === player._id)) {
@@ -76,8 +98,25 @@ export function registerJoinVillageHandler(io: GameServer, socket: GameSocket): 
     session.sockets.set(player._id, socket.id);
     await socket.join([gameVillage(parsed.villageCode), playerChannel(player._id)]);
 
+    // Self-heal a lobby whose host became unreachable without ever going
+    // through the normal leave/disconnect handoff — see
+    // `ensureLobbyHasHost`'s own doc comment for exactly how that happens
+    // (a host's identity is a fixed snapshot from village creation; if
+    // their session is ever lost and they rejoin as a different player id,
+    // nobody is left holding a reachable host flag). This join is the
+    // first opportunity to notice and recover, since a real client is now
+    // here to receive the corrected state.
+    if (session.state.phase === 'LOBBY') {
+      const healed = ensureLobbyHasHost(session.state);
+      if (healed !== session.state) {
+        session.state = healed;
+        const newHost = session.state.players.find((p) => p.isHost);
+        if (newHost) await villagesRepository.setHost(parsed.villageCode, newHost.id);
+      }
+    }
+
     io.to(gameVillage(parsed.villageCode)).emit('playerJoined', { playerId: player._id, playerName: player.displayName });
-    broadcastStateToVillage(io, session.state);
+    broadcastStateToVillage(io, session);
     ackOk(ack);
   });
 }
@@ -98,6 +137,8 @@ export function bootstrapLobbySession(villageCode: VillageCode, _hostId: PlayerI
       players: [],
       nightActions: [],
       votes: [],
+      nominations: [],
+      shortlistedIds: [],
       chatLog: [],
     }),
     sockets: new Map(),
@@ -105,5 +146,6 @@ export function bootstrapLobbySession(villageCode: VillageCode, _hostId: PlayerI
     roleSeed: Date.now() ^ Math.floor(Math.random() * 0xffffffff),
     pendingEvents: [],
     phaseDurationOverridesMs: {},
+    pendingRequests: new Map(),
   };
 }

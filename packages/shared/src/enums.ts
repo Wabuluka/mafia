@@ -32,6 +32,22 @@ export const PhaseSchema = z.enum([
 export type Phase = z.infer<typeof PhaseSchema>;
 
 /**
+ * Sequential sub-steps within a single NIGHT phase, under the
+ * moderator-driven night flow: mafia discuss and lock in a kill target,
+ * then the moderator (host) explicitly prompts the detective, then the
+ * doctor — see realtime/handlers/advanceNightSubPhase.ts. `COMPLETE` is a
+ * terminal marker meaning every applicable role has had its turn and NIGHT
+ * is ready to actually resolve (see engine/nightActions.ts's `resolveNight`
+ * and phaseLoop.ts's `advancePhase`). The order here is also the fixed
+ * moderator-prompt order — NOT necessarily the same as
+ * `NIGHT_ACTING_ROLES`'s resolution order in nightActions.ts, which governs
+ * how the doctor's save is applied against the mafia's kill, not who's
+ * prompted first.
+ */
+export const NightSubPhaseSchema = z.enum(['MAFIA', 'DETECTIVE', 'DOCTOR', 'COMPLETE']);
+export type NightSubPhase = z.infer<typeof NightSubPhaseSchema>;
+
+/**
  * A player's life status within a game. Connection state is tracked
  * separately on `Player.connected` since the two are orthogonal — a
  * disconnected player can still be alive and rejoin.

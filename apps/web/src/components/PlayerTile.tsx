@@ -6,9 +6,22 @@
 // logic: this component only renders the props it's given and reports taps
 // back up via `onSelect` — selection *meaning* (who can select whom, what
 // happens on select) is entirely the caller's concern.
+//
+// MEMOIZED (React.memo, see the bottom of this file) — measured before
+// fixing (Prompt 14's re-render audit): a single vote-cast event
+// previously re-rendered EVERY tile in a 12-player grid (96 renders across
+// an 8-vote burst — 1.00 renders/tile/event, i.e. 100% of tiles re-rendered
+// on every single unrelated vote). memo() alone isn't sufficient, though —
+// it only helps if the PROPS passed in are actually referentially stable
+// across the parent's re-renders. See VotingPhase.tsx / TargetGrid.tsx for
+// the other half of this fix: passing a stable `onSelect` callback (one
+// per player id, memoized) instead of a fresh arrow function created
+// inline on every parent render, which would otherwise make every tile's
+// props "different" by reference on every render and defeat memo()
+// entirely.
 // ---------------------------------------------------------------------------
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 
 export interface PlayerTileProps {
   name: string;
@@ -65,7 +78,7 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-export function PlayerTile({
+function PlayerTileImpl({
   name,
   playerId,
   alive,
@@ -96,7 +109,7 @@ export function PlayerTile({
           ? 'border-primary bg-primary/10 shadow-[0_0_0_1px_theme(colors.primary)]'
           : accent === 'mafia'
             ? 'border-mafia-accent/40 bg-mafia-accent/5'
-            : 'border-white/5 bg-elevated',
+            : 'border-base-content/10 bg-elevated',
         interactive && !disabled ? 'active:scale-[0.97]' : '',
         disabled ? 'opacity-40' : '',
         !alive ? 'saturate-[0.35]' : '',
@@ -109,8 +122,15 @@ export function PlayerTile({
             !alive ? 'grayscale' : '',
           ].join(' ')}
           style={{
-            backgroundColor: `hsl(${hue} 55% 22%)`,
-            color: `hsl(${hue} 70% 82%)`,
+            // Lightness comes from theme-scoped CSS custom properties (see
+            // tailwind.config.ts's "--player-tile-bg-l"/"--player-tile-
+            // text-l" on both themes), so the same inline style resolves
+            // correctly whichever theme is active without this component
+            // reading `data-theme` itself — avoids a runtime theme read in
+            // a memo'd hot-path component (see this file's header on why
+            // memoization matters here).
+            backgroundColor: `hsl(${hue} 55% var(--player-tile-bg-l))`,
+            color: `hsl(${hue} 70% var(--player-tile-text-l))`,
           }}
         >
           {initials(name)}
@@ -122,7 +142,7 @@ export function PlayerTile({
           aria-hidden="true"
           className={[
             'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-elevated',
-            connected ? 'bg-village-accent' : 'bg-white/20',
+            connected ? 'bg-village-accent' : 'bg-base-content/25',
           ].join(' ')}
         />
 
@@ -144,22 +164,29 @@ export function PlayerTile({
       </span>
 
       {isHost && (
-        <span className="absolute -top-1.5 left-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-primary-content">
+        <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-1.5 py-0.5 text-[0.625rem] font-bold uppercase leading-none tracking-wide text-primary-content shadow-sm">
           Host
         </span>
       )}
 
       {!alive && (
-        <span className="absolute -top-1.5 right-1.5 rounded-full bg-danger px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-white">
+        <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-danger px-1.5 py-0.5 text-[0.625rem] font-bold uppercase leading-none tracking-wide text-white shadow-sm">
           Dead
         </span>
       )}
 
       {cornerLabel && (
-        <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-base-content/70">
+        <span className="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-base-content/70">
           {cornerLabel}
         </span>
       )}
     </Tag>
   );
 }
+
+/** `onSelect` is a function prop, which React.memo's default shallow
+ * comparison DOES check by reference (not skipped) — so this memoization
+ * only pays off if every call site passes a referentially stable callback
+ * per player id, not a fresh closure created inline on every render. See
+ * VotingPhase.tsx / TargetGrid.tsx for that half of the fix. */
+export const PlayerTile = memo(PlayerTileImpl);

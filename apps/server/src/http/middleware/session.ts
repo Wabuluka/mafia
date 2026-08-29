@@ -31,14 +31,51 @@ export function generateSessionToken(): string {
   return randomBytes(SESSION_TOKEN_BYTES).toString('base64url');
 }
 
-/** Sets the signed httpOnly session cookie. `secure` is only forced in
- * production so local HTTP dev keeps working. */
+/** Clears the session cookie. `secure`/`sameSite` here MUST mirror
+ * `setSessionCookie` exactly — a `clearCookie` call with different
+ * attributes doesn't match the cookie the browser actually holds and is
+ * silently a no-op (the browser keys a cookie by name+domain+path, but
+ * Express's cookie deletion is really just re-setting it with an
+ * already-expired date, so the attributes still have to line up for the
+ * browser to treat it as the same cookie). */
+export function clearSessionCookie(res: Response): void {
+  const crossSite = env.NODE_ENV === 'production';
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    signed: true,
+    secure: crossSite,
+    sameSite: crossSite ? 'none' : 'lax',
+    path: '/',
+  });
+}
+
+/** Sets the signed httpOnly session cookie. `secure`/`sameSite` are only
+ * forced to their cross-origin-capable values in production so local HTTP
+ * dev (web on :3000, server on :4000 — technically cross-PORT, which
+ * browsers treat as same-SITE, not cross-site) keeps working without HTTPS.
+ *
+ * PRODUCTION IS CROSS-ORIGIN BY DEFAULT for this app's documented
+ * deployment topology (see docs/DEPLOYMENT.md): the Next app on Vercel and
+ * this server on Railway/Fly/Render are different eTLD+1 domains, not just
+ * different ports — genuinely cross-SITE, not merely cross-origin. A
+ * `sameSite: 'lax'` cookie is silently withheld by the browser on
+ * cross-site fetch/XHR/WebSocket requests (`lax` only attaches on
+ * top-level navigation), which would make every credentialed
+ * `fetch(..., { credentials: 'include' })` call in lib/api.ts and the
+ * Socket.IO handshake's cookie auth (socketAuth.ts) fail closed with
+ * UNAUTHENTICATED in production despite working perfectly in local dev —
+ * exactly the kind of bug that only surfaces after a real deployment.
+ * `sameSite: 'none'` is REQUIRED for a cross-site cookie to be sent at
+ * all, and browsers additionally require `secure: true` on any
+ * `sameSite: 'none'` cookie (rejected outright otherwise) — hence both
+ * being forced together, not independently, in production. */
 export function setSessionCookie(res: Response, token: string): void {
+  const crossSite = env.NODE_ENV === 'production';
   res.cookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     signed: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: crossSite,
+    sameSite: crossSite ? 'none' : 'lax',
     // 180 days — this is the anonymous identity persisting "across
     // reconnects and reloads", not a short-lived auth token.
     maxAge: 180 * 24 * 60 * 60 * 1000,

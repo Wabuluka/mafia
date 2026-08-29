@@ -18,11 +18,19 @@ export interface MafiaChatPanelProps {
   messages: ChatMessage[];
   selfPlayerId: string;
   onSend: (body: string) => void;
+  /** True once the moderator-driven night sequence has moved past MAFIA —
+   * the server rejects a send at that point (see server/realtime/handlers/
+   * sendChat.ts's mafia chat lock), so the input is disabled here too
+   * rather than letting a message round-trip just to bounce. */
+  disabled?: boolean;
+  /** Shown in place of the "only your family can see this" hint once
+   * `disabled` is true and there's nothing (yet) in the log to show. */
+  disabledMessage?: string;
 }
 
 const MAX_MESSAGE_LENGTH = 500;
 
-export function MafiaChatPanel({ messages, selfPlayerId, onSend }: MafiaChatPanelProps) {
+export function MafiaChatPanel({ messages, selfPlayerId, onSend, disabled, disabledMessage }: MafiaChatPanelProps) {
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -43,7 +51,7 @@ export function MafiaChatPanel({ messages, selfPlayerId, onSend }: MafiaChatPane
 
       <div ref={listRef} className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
         {messages.length === 0 ? (
-          <p className="text-sm text-base-content/40">Only your family can see this.</p>
+          <p className="text-sm text-base-content/40">{disabled && disabledMessage ? disabledMessage : 'Only your family can see this.'}</p>
         ) : (
           messages.map((m) => (
             <div key={m.id} className="text-sm">
@@ -62,13 +70,14 @@ export function MafiaChatPanel({ messages, selfPlayerId, onSend }: MafiaChatPane
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_MESSAGE_LENGTH))}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Message your family…"
-          className="min-h-11 flex-1 rounded-xl border border-white/10 bg-elevated-2 px-3 text-base text-base-content outline-none focus:border-mafia-accent"
+          placeholder={disabled ? (disabledMessage ?? 'Chat is closed for tonight.') : 'Message your family…'}
+          disabled={disabled}
+          className="min-h-11 flex-1 rounded-xl border border-base-content/10 bg-elevated-2 px-3 text-base text-base-content outline-none focus:border-mafia-accent disabled:opacity-50"
         />
         <button
           type="button"
           onClick={handleSend}
-          disabled={!draft.trim()}
+          disabled={disabled || !draft.trim()}
           aria-label="Send message"
           className="flex min-h-11 w-11 items-center justify-center rounded-xl bg-mafia-accent text-white disabled:opacity-40"
         >

@@ -18,6 +18,7 @@ import { attachSession } from './middleware/session';
 import { gamesRouter } from './routes/games.routes';
 import { villagesRouter } from './routes/villages.routes';
 import { sessionRouter } from './routes/session.routes';
+import { metricsRouter } from './routes/metrics.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -56,6 +57,11 @@ export function createApp(): Express {
   app.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
+
+  // Operational endpoint, not part of the client API surface — see
+  // metrics.routes.ts's module header for why it's mounted here rather
+  // than under /api.
+  app.use(metricsRouter);
 
   app.use('/api', notFoundHandler);
 

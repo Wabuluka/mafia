@@ -16,15 +16,21 @@
 // ---------------------------------------------------------------------------
 
 import type { FullGameState, PlayerId, PlayerView, PublicPlayer, You } from '@mafia/shared';
+import { NIGHT_ACTING_ROLES } from './nightActions';
 
 /** Builds the `you` block: private knowledge belonging only to `viewerId`.
  * `viewer.role` is legitimately absent in the LOBBY, before the host has
  * started the game and `assignRoles` has run — that's not an error case,
- * just a `you` block with no role-derived fields populated yet. A missing
- * `viewer` entry entirely (the id isn't a player in this game at all) IS a
- * caller bug, since every socket handler already checks membership via
- * `requirePlayerInSession` before ever reaching here — so that case still
- * throws loudly rather than silently returning a bogus view. */
+ * just a `you` block with no role-derived fields populated yet. It is ALSO
+ * permanently absent for the host/moderator (see Player.isHost's doc
+ * comment) — `you.isModerator` is the explicit signal a client should use
+ * to tell these two "no role" cases apart, rather than inferring from
+ * `role === undefined` alone (ambiguous: "not assigned yet" vs "will never
+ * have one"). A missing `viewer` entry entirely (the id isn't a player in
+ * this game at all) IS a caller bug, since every socket handler already
+ * checks membership via `requirePlayerInSession` before ever reaching here
+ * — so that case still throws loudly rather than silently returning a
+ * bogus view. */
 function buildYou(state: FullGameState, viewerId: PlayerId): You {
   const viewer = state.players.find((p) => p.id === viewerId);
   if (!viewer) {
@@ -34,6 +40,7 @@ function buildYou(state: FullGameState, viewerId: PlayerId): You {
   const you: You = {
     playerId: viewer.id,
     role: viewer.role,
+    isModerator: viewer.isHost,
     hasActedThisPhase: hasActedThisPhase(state, viewer.id),
   };
 
@@ -71,7 +78,31 @@ function buildYou(state: FullGameState, viewerId: PlayerId): You {
     you.lastProtectedPlayerId = lastNightsProtectionTarget(state, viewer.id);
   }
 
+  if (viewer.status === 'DEAD' && state.phase === 'NIGHT') {
+    you.deadNightProgress = buildDeadNightProgress(state);
+  }
+
   return you;
+}
+
+/** Count-only night-activity signal for a dead spectator — see
+ * `deadNightProgress`'s doc comment on `YouSchema` for why this is
+ * deliberately identity-free. `actedCount` counts DISTINCT actors who have
+ * submitted this round (a MAFIA member revising their target — see
+ * nightActions.ts's "last submission wins" rule — must not inflate the
+ * count past the number of people who've actually acted). `totalActingRoles`
+ * counts LIVING players currently holding an acting role, mirroring
+ * `nextApplicableNightSubPhase`'s own "skip roles nobody living holds"
+ * logic in @mafia/shared, so the denominator never overstates how many
+ * people could possibly act this round. */
+function buildDeadNightProgress(state: FullGameState): NonNullable<You['deadNightProgress']> {
+  const actedCount = new Set(
+    state.nightActions.filter((a) => a.nightNumber === state.roundNumber).map((a) => a.actorId),
+  ).size;
+  const totalActingRoles = state.players.filter(
+    (p) => p.status === 'ALIVE' && p.role && NIGHT_ACTING_ROLES.includes(p.role),
+  ).length;
+  return { actedCount, totalActingRoles };
 }
 
 /** The doctor's own protection target from the immediately preceding
@@ -95,29 +126,67 @@ function hasActedThisPhase(state: FullGameState, playerId: PlayerId): boolean {
   if (state.phase === 'NIGHT') {
     return state.nightActions.some((a) => a.actorId === playerId && a.nightNumber === state.roundNumber);
   }
+  if (state.phase === 'DAY_DISCUSSION') {
+    return state.nominations.some((n) => n.nominatorId === playerId && n.dayNumber === state.roundNumber);
+  }
   if (state.phase === 'DAY_VOTE') {
     return state.votes.some((v) => v.voterId === playerId && v.dayNumber === state.roundNumber);
   }
   return false;
 }
 
-/** Builds one entry of the public roster: every field a client is allowed
+/**
+ * Which player ids died in the resolution `state.pendingNarration` is
+ * still holding back from the table — i.e. whose `status`/`revealedRole`
+ * `buildPublicPlayer` must mask for every OTHER viewer until the host
+ * calls `revealNarration`. Empty whenever there's no pending narration
+ * (the normal case), so `buildPublicPlayer` below is a no-op fast path
+ * outside the brief resolved-but-not-yet-revealed window.
+ */
+function pendingDeathIds(state: FullGameState): ReadonlySet<PlayerId> {
+  if (!state.pendingNarration) return new Set();
+  return new Set(state.pendingNarration.outcome.died.map((d) => d.playerId));
+}
+
+/**
+ * Builds one entry of the public roster: every field a client is allowed
  * to see about *any* player, self included, except the bare `role` field —
  * that only ever appears on `revealedRole` (once publicly revealed) or,
- * for the viewer's own role, inside `you`. */
-function buildPublicPlayer(state: FullGameState, playerId: PlayerId): PublicPlayer {
+ * for the viewer's own role, inside `you`.
+ *
+ * MODERATOR REVEAL GATE: while a resolution is sitting in
+ * `pendingNarration` (see phaseLoop.ts's module header — the host hasn't
+ * called `revealNarration` yet), a player who died in THAT resolution must
+ * not show up as dead to anyone else's roster — otherwise the "reveal" the
+ * host controls would be theater: everyone would already see the death in
+ * their player list the instant it happened, narration or not. Three
+ * exceptions, all deliberate:
+ *   - The player's own row, on their own PlayerView (`playerId ===
+ *     viewerId`) — masking someone's death from THEMSELVES would leave
+ *     their own client thinking they can still act/vote/talk in the living
+ *     channels, an actively broken UI state, not just a spoiled surprise.
+ *   - The host's view of anyone — the host needs the real roster to write
+ *     an accurate narration and to see who they're about to reveal.
+ *   - A death from any PRIOR, already-revealed resolution — only ids in
+ *     the CURRENT `pendingNarration.died` are masked; old deaths remain
+ *     visible exactly as before this feature existed.
+ */
+function buildPublicPlayer(state: FullGameState, playerId: PlayerId, viewerId: PlayerId, viewerIsHost: boolean): PublicPlayer {
   const player = state.players.find((p) => p.id === playerId);
   if (!player) {
     throw new Error(`redactStateFor: player ${playerId} disappeared while building the public roster`);
   }
+
+  const mustMask = !viewerIsHost && playerId !== viewerId && pendingDeathIds(state).has(playerId);
+
   return {
     id: player.id,
     name: player.name,
-    status: player.status,
+    status: mustMask ? 'ALIVE' : player.status,
     connected: player.connected,
     isHost: player.isHost,
     isReady: player.isReady,
-    revealedRole: player.revealedRole,
+    revealedRole: mustMask ? undefined : player.revealedRole,
     joinedAt: player.joinedAt,
   };
 }
@@ -142,25 +211,78 @@ function visibleChannelsFor(state: FullGameState, viewerId: PlayerId): ReadonlyA
 }
 
 /**
+ * Which player rows `viewerId` is entitled to see at all — distinct from
+ * `buildPublicPlayer`'s per-field masking, which redacts what's visible
+ * ABOUT a row that's already going out. The host/moderator is invisible to
+ * everyone else's roster entirely: not shown dimmed/disabled, not counted
+ * in a total, not present as a row a non-host client could ever inspect —
+ * so there is no player object anywhere in a non-host's PlayerView a curious
+ * client could use to nominate/vote/target them, even by fishing an id out
+ * of network traffic. The two exceptions are symmetric with
+ * `buildPublicPlayer`'s own death-reveal exceptions: the host's OWN row on
+ * their OWN view (they need to see themselves — e.g. their tile in any
+ * roster-derived UI), and every row on the host's OWN view (moderating
+ * requires seeing everyone, including — trivially — themselves).
+ */
+function visiblePlayerIds(state: FullGameState, viewerId: PlayerId, viewerIsHost: boolean): ReadonlySet<PlayerId> {
+  if (viewerIsHost) return new Set(state.players.map((p) => p.id));
+  return new Set(state.players.filter((p) => !p.isHost || p.id === viewerId).map((p) => p.id));
+}
+
+/**
  * Projects the server's private `FullGameState` down to exactly what
  * `viewerId` is allowed to see. See the module header — this function is
  * the security boundary of the entire application and is written
  * defensively on purpose: every field of `PlayerView` is constructed from
  * an explicit, named source, never copied wholesale from `FullGameState`.
  */
-export function redactStateFor(state: FullGameState, viewerId: PlayerId): PlayerView {
+export function redactStateFor(state: FullGameState, viewerId: PlayerId, gameId?: string): PlayerView {
+  const viewer = state.players.find((p) => p.id === viewerId);
+  const viewerIsHost = viewer?.isHost ?? false;
   const visibleChannels = new Set(visibleChannelsFor(state, viewerId));
+  const visiblePlayers = visiblePlayerIds(state, viewerId, viewerIsHost);
 
   return {
     villageCode: state.villageCode,
+    gameId,
     phase: state.phase,
     roundNumber: state.roundNumber,
-    players: state.players.map((p) => buildPublicPlayer(state, p.id)),
+    // The host/moderator's row is omitted entirely from every OTHER
+    // viewer's roster — see visiblePlayerIds's doc comment. This is a
+    // stricter guarantee than "excluded from targeting": the row simply
+    // doesn't exist in a non-host client's PlayerView, so there's nothing
+    // to nominate/vote/target even for a client that ignored the UI's own
+    // filtering and tried to act on a stale/guessed id.
+    players: state.players
+      .filter((p) => visiblePlayers.has(p.id))
+      .map((p) => buildPublicPlayer(state, p.id, viewerId, viewerIsHost)),
     phaseTimer: state.phaseTimer,
+    // Passed through unredacted for every viewer, same as `phase` itself —
+    // a role NAME ("it's the detective's turn") isn't tied to a player id,
+    // so it doesn't reveal WHO holds that role, only that the moderator-
+    // driven night sequence has reached that step. See
+    // NightSubPhaseSchema's doc comment in @mafia/shared.
+    nightSubPhase: state.nightSubPhase,
+    // Only the host sees the pending narration before it's revealed — that's
+    // the whole point of the reveal gate (see buildPublicPlayer's doc
+    // comment above): a non-host player getting the suggested text/outcome
+    // straight from state would know exactly what happened before the host
+    // ever says a word, same leak as an unmasked roster would be.
+    pendingNarration: viewerIsHost ? state.pendingNarration : undefined,
     chatLog: state.chatLog.filter((m) => visibleChannels.has(m.channel)),
     votes: state.votes
       .filter((v) => v.dayNumber === state.roundNumber)
       .map((v) => ({ voterId: v.voterId, targetId: v.targetId, dayNumber: v.dayNumber, submittedAt: v.submittedAt })),
+    // Public nomination tally — unconditional for every viewer, living or
+    // dead, unlike the mafia's private night tally: nominating is public
+    // the instant it's cast, same as a vote already is, so there is no
+    // per-viewer redaction to apply here. Untouched by the pendingNarration
+    // death-reveal gate (see buildPublicPlayer's doc comment above) since
+    // nominations never change a player's status/revealedRole.
+    nominations: state.nominations
+      .filter((n) => n.dayNumber === state.roundNumber)
+      .map((n) => ({ nominatorId: n.nominatorId, targetId: n.targetId, dayNumber: n.dayNumber, submittedAt: n.submittedAt })),
+    shortlistedIds: state.shortlistedIds,
     endReason: state.endReason,
     winningTeam: state.winningTeam,
     you: buildYou(state, viewerId),

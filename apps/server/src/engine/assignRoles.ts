@@ -58,6 +58,17 @@ function expandDistribution(distribution: RoleDistribution, playerCount: number)
  * Pure: same input + same seed => byte-identical output, every time. All
  * non-role fields (name, isHost, joinedAt, ...) pass through unchanged from
  * the lobby roster; every player starts the game ALIVE.
+ *
+ * CALLER'S JOB TO FILTER: this function assigns a role to every player it's
+ * given, unconditionally — it has no awareness of `participatesInGame` and
+ * must never be passed the moderator/host. See realtime/handlers/
+ * startGame.ts and playAgain.ts, which split the roster into
+ * `participatesInGame` players (passed here) and the moderator (reassembled
+ * back into the roster afterward with `role: undefined`) before calling
+ * this. Keeping this function's "every input gets a role" invariant simple
+ * and unconditional is deliberate — pushing the moderator-exclusion
+ * decision to the call site keeps this, the engine's most consequential
+ * random step, easy to reason about and test in isolation.
  */
 export function assignRoles(
   players: readonly UnassignedPlayer[],

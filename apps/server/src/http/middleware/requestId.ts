@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
+import { logger } from '../../logger';
 
 declare module 'express-serve-static-core' {
   interface Request {
@@ -28,16 +29,13 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
   const startedAt = process.hrtime.bigint();
   res.on('finish', () => {
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-    // eslint-disable-next-line no-console
-    console.log(
-      JSON.stringify({
-        requestId: req.requestId,
-        method: req.method,
-        path: req.path,
-        status: res.statusCode,
-        durationMs: Math.round(durationMs * 100) / 100,
-      }),
-    );
+    logger.info('request', {
+      requestId: req.requestId,
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs * 100) / 100,
+    });
   });
   next();
 }

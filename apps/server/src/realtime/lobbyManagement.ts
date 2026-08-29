@@ -32,8 +32,21 @@ export function pickNextHost(remainingPlayers: readonly Player[]): Player | unde
  * eligible to hand it to (see pickNextHost) — a hostless lobby is left as
  * such rather than forced onto someone who can't act on it; the next
  * player to join or reconnect becomes eligible on the next call.
+ *
+ * LOBBY-ONLY once the host is guaranteed role-less (see assignRoles.ts /
+ * startGame.ts's "moderator never plays" rule): a no-op outside `phase ===
+ * 'LOBBY'`. The host disconnecting mid-game is deliberately NOT handled by
+ * promoting a replacement — every other player already has a role/team by
+ * that point, and handing them the host flag too would either break the
+ * "host is never a participant" invariant or corrupt win-condition parity
+ * if their role were stripped retroactively. A mid-game host disconnect
+ * just leaves the game without a live moderator (their `connected: false`
+ * is already visible to clients) until they reconnect — no one else can
+ * ever become host for an in-progress game.
  */
 export function transferHostIfNeeded(state: FullGameState, outgoingPlayerId: string): FullGameState {
+  if (state.phase !== 'LOBBY') return state;
+
   const outgoing = state.players.find((p) => p.id === outgoingPlayerId);
   if (!outgoing?.isHost) return state;
 
@@ -53,5 +66,44 @@ export function transferHostIfNeeded(state: FullGameState, outgoingPlayerId: str
       if (p.id === nextHost.id) return { ...p, isHost: true };
       return p;
     }),
+  };
+}
+
+/**
+ * Self-heals a lobby that has no reachable host — the case
+ * `transferHostIfNeeded` alone doesn't cover, since that function only
+ * fires on an explicit leave/disconnect of the CURRENT host. A host can
+ * also become unreachable WITHOUT ever disconnecting from that role's own
+ * perspective: their identity is a fixed snapshot of whoever's session
+ * created the village (see http/routes/villages.routes.ts), so if that
+ * session is ever lost/reset/expired and they rejoin under a different
+ * player id, the roster is left with an `isHost: true` entry that's
+ * either gone or permanently disconnected, and the NEW arrival has no
+ * host flag of their own — nobody can ever click Start again.
+ *
+ * Call this after every roster mutation in LOBBY phase (join, reconnect,
+ * disconnect, leave, kick) so the lobby recovers on the very next
+ * opportunity rather than staying silently stranded. No-ops if a
+ * connected host already exists — this is a bottom-up safety net, not a
+ * replacement for `transferHostIfNeeded`'s normal handoff path.
+ *
+ * LOBBY-ONLY, same as `transferHostIfNeeded` — every existing call site
+ * already only invokes this during LOBBY (see joinVillage.ts, disconnect.ts's
+ * phase-gated branch), which is also why this doesn't need its own
+ * `state.phase !== 'LOBBY'` guard today. Do not call this from a mid-game
+ * code path: once the host is guaranteed role-less, promoting a new host
+ * mid-game runs into the exact same "host must never be a participant"
+ * conflict `transferHostIfNeeded`'s doc comment explains.
+ */
+export function ensureLobbyHasHost(state: FullGameState): FullGameState {
+  const hasReachableHost = state.players.some((p) => p.isHost && p.connected);
+  if (hasReachableHost) return state;
+
+  const nextHost = pickNextHost(state.players);
+  if (!nextHost) return state; // nobody connected at all — nothing to promote yet
+
+  return {
+    ...state,
+    players: state.players.map((p) => ({ ...p, isHost: p.id === nextHost.id })),
   };
 }

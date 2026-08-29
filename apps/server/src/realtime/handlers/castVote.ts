@@ -7,7 +7,7 @@
 
 import { CastVotePayloadSchema } from '@mafia/shared';
 import { ABSTAIN, castVote } from '../../engine';
-import { broadcastStateToVillage, type GameServer, type GameSocket } from '../emit';
+import { broadcastVoteChange, type GameServer, type GameSocket } from '../emit';
 import { ackError, ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
 import { isDuplicateAction } from '../idempotency';
 import { tryResolveEarly } from '../phaseLoop';
@@ -44,7 +44,10 @@ export function registerCastVoteHandler(io: GameServer, socket: GameSocket): voi
     const targetKey = parsed.targetId ?? 'ABSTAIN';
     const idempotencyKey = `vote:${socket.player._id}:${session.state.roundNumber}:${targetKey}`;
     if (isDuplicateAction(session, idempotencyKey)) {
-      broadcastStateToVillage(io, session.state);
+      // A retried request still gets an ack-equivalent response — see
+      // submitNightAction.ts's identical comment — but as the cheap diff,
+      // not a full state resend, matching the normal path below.
+      broadcastVoteChange(io, session);
       ackOk(ack);
       return;
     }
@@ -74,7 +77,20 @@ export function registerCastVoteHandler(io: GameServer, socket: GameSocket): voi
       });
     }
 
-    broadcastStateToVillage(io, session.state);
+    // The high-frequency diff path (see broadcastVoteChange's doc comment
+    // and VoteChangedPayloadSchema in @mafia/shared/events.ts for the
+    // measured payload-size numbers this replaces): a full
+    // broadcastStateToVillage here would re-serialize and re-send every
+    // player's entire redacted view — including the full chat log, which
+    // measured ~78% of a realistic mid-game payload's bytes — for every
+    // single vote cast or changed, even though a vote only ever changes
+    // `view.votes`. The voter's own `you.hasActedThisPhase` isn't
+    // recomputed by this diff, but nothing in the vote UI reads it (see
+    // VotingPhase.tsx, which derives "have I voted" from `view.votes`
+    // directly) — the field does still get corrected at the next full
+    // resync point (phase change, or an explicit requestResync), so
+    // nothing ever permanently drifts.
+    broadcastVoteChange(io, session);
     ackOk(ack);
 
     // Skip the remaining wait if every living player has now voted (or

@@ -22,7 +22,7 @@ const TONE_STYLES: Record<PhaseTone, { bg: string; text: string; icon: string }>
   night: { bg: 'bg-mafia-accent/15', text: 'text-mafia-accent', icon: '🌙' },
   day: { bg: 'bg-village-accent/15', text: 'text-village-accent', icon: '☀️' },
   vote: { bg: 'bg-primary/15', text: 'text-primary', icon: '🗳️' },
-  neutral: { bg: 'bg-white/5', text: 'text-base-content', icon: '•' },
+  neutral: { bg: 'bg-base-content/5', text: 'text-base-content', icon: '•' },
 };
 
 export function PhaseBanner({ label, narration, tone = 'neutral' }: PhaseBannerProps) {

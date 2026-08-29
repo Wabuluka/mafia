@@ -199,6 +199,44 @@
 //     -> Both handlers check `session.state.phase !== 'LOBBY'` and reject
 //        INVALID_PHASE — kicking and duration changes are lobby-only,
 //        full stop, matching setReady/startGame's own phase gate.
+//
+// 23. A non-host player calling pauseTimer/resumeTimer to freeze or resume
+//     the game's clock without authority to (e.g. stalling a phase they're
+//     about to lose, or unpausing early to catch someone off guard).
+//     -> Both handlers check `caller.isHost` read from server state, same
+//        pattern as kickPlayer/updateVillageSettings — NOT_HOST otherwise.
+//
+// 24. Submitting a night action or vote while the phase is paused, hoping
+//     it forces an early resolution (isPhaseReadyToResolveEarly) and
+//     smuggles the phase forward despite the host's pause.
+//     -> `tryResolveEarly` (phaseLoop.ts) checks `phaseTimer.pausedAt` and
+//        is a no-op while set — actions can still be submitted (and are
+//        recorded) while paused, but nothing can advance the phase except
+//        an explicit `resumeTimer` from the host.
+//
+// 25. A non-host player calling startPhaseTimer/endPhaseNow/revealNarration
+//     to control the game's pacing or put words in the narrator's mouth
+//     without authority to.
+//     -> All three handlers check `caller.isHost`, same NOT_HOST pattern
+//        as every other host-only action.
+//
+// 26. A player seeing a phase's outcome (who died, vote result) before the
+//     host has actually revealed it, by inspecting raw state — e.g. reading
+//     `pendingNarration.outcome` client-side to know a death before the
+//     host narrates it.
+//     -> This is a DELIBERATE, documented exception, not a leak: outcomes
+//        are computed and applied to `state.players` (death/revealedRole)
+//        the instant a phase resolves, same as before this feature existed
+//        — `pendingNarration` is genuinely visible to every player via
+//        PlayerView (see game-state.ts's doc comment on why it's not
+//        per-viewer redacted) so the host's own client can render the
+//        edit-before-reveal UI. The "reveal" is a narrative/pacing device
+//        for the table, not a security boundary — nothing here claims
+//        players are BLOCKED from seeing who died before the host speaks,
+//        only that the host controls when the STORY beat is announced. If
+//        a future requirement needs the outcome itself hidden until
+//        reveal (not just the narration text), that's a bigger redaction
+//        change, not covered by this feature.
 // ===========================================================================
 
 import type { GameServer, GameSocket } from './emit';
@@ -207,13 +245,24 @@ import { registerJoinVillageHandler } from './handlers/joinVillage';
 import { registerLeaveVillageHandler } from './handlers/leaveVillage';
 import { registerSetReadyHandler } from './handlers/setReady';
 import { registerStartGameHandler } from './handlers/startGame';
+import { registerPlayAgainHandler } from './handlers/playAgain';
 import { registerSubmitNightActionHandler } from './handlers/submitNightAction';
 import { registerCastVoteHandler } from './handlers/castVote';
+import { registerSubmitNominationHandler } from './handlers/submitNomination';
 import { registerSendChatHandler } from './handlers/sendChat';
 import { registerRequestResyncHandler } from './handlers/requestResync';
 import { registerDisconnectHandler } from './handlers/disconnect';
 import { registerKickPlayerHandler } from './handlers/kickPlayer';
 import { registerUpdateVillageSettingsHandler } from './handlers/updateVillageSettings';
+import { registerRequestToJoinHandler } from './handlers/requestToJoin';
+import { registerRespondToJoinRequestHandler } from './handlers/respondToJoinRequest';
+import { registerCancelJoinRequestHandler } from './handlers/cancelJoinRequest';
+import { registerPauseTimerHandler } from './handlers/pauseTimer';
+import { registerResumeTimerHandler } from './handlers/resumeTimer';
+import { registerStartPhaseTimerHandler } from './handlers/startPhaseTimer';
+import { registerEndPhaseNowHandler } from './handlers/endPhaseNow';
+import { registerRevealNarrationHandler } from './handlers/revealNarration';
+import { registerAdvanceNightSubPhaseHandler } from './handlers/advanceNightSubPhase';
 
 export { villageManager, type GameSession } from './VillageManager';
 export { emitStateToPlayer, broadcastStateToVillage, type GameServer, type GameSocket } from './emit';
@@ -228,12 +277,23 @@ export function attachRealtime(io: GameServer): void {
     registerLeaveVillageHandler(io, socket);
     registerSetReadyHandler(io, socket);
     registerStartGameHandler(io, socket);
+    registerPlayAgainHandler(io, socket);
     registerSubmitNightActionHandler(io, socket);
     registerCastVoteHandler(io, socket);
+    registerSubmitNominationHandler(io, socket);
     registerSendChatHandler(io, socket);
     registerRequestResyncHandler(io, socket);
     registerKickPlayerHandler(io, socket);
     registerUpdateVillageSettingsHandler(io, socket);
+    registerRequestToJoinHandler(io, socket);
+    registerRespondToJoinRequestHandler(io, socket);
+    registerCancelJoinRequestHandler(io, socket);
+    registerPauseTimerHandler(io, socket);
+    registerResumeTimerHandler(io, socket);
+    registerStartPhaseTimerHandler(io, socket);
+    registerEndPhaseNowHandler(io, socket);
+    registerRevealNarrationHandler(io, socket);
+    registerAdvanceNightSubPhaseHandler(io, socket);
     registerDisconnectHandler(io, socket);
   });
 }

@@ -15,6 +15,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { AppError } from '../errors';
 import { env } from '../../env';
+import { logger } from '../../logger';
 
 export interface ErrorResponseBody {
   error: {
@@ -41,10 +42,7 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   const requestId = req.requestId ?? 'unknown';
 
   if (err instanceof AppError) {
-    // eslint-disable-next-line no-console
-    console.error(
-      JSON.stringify({ requestId, level: 'warn', code: err.code, message: err.message }),
-    );
+    logger.warn(err.message, { requestId, code: err.code });
     const body: ErrorResponseBody = {
       error: { code: err.code, message: err.message, requestId, details: err.details },
     };
@@ -58,8 +56,7 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   // server-side, keyed by requestId, so it's diagnosable without leaking it.
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : undefined;
-  // eslint-disable-next-line no-console
-  console.error(JSON.stringify({ requestId, level: 'error', message, stack: env.NODE_ENV === 'production' ? undefined : stack }));
+  logger.error(message, { requestId, stack: env.NODE_ENV === 'production' ? undefined : stack });
 
   const body: ErrorResponseBody = {
     error: {

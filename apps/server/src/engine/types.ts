@@ -12,6 +12,7 @@ import type {
   GameEndReason,
   NightAction,
   PlayerId,
+  Role,
   Team,
   Vote,
 } from '@mafia/shared';
@@ -33,10 +34,18 @@ export type EngineRejectionReason =
   | 'PLAYER_DEAD'
   | 'WRONG_PHASE'
   | 'WRONG_ROLE'
+  | 'WRONG_SUB_PHASE'
   | 'ALREADY_ACTED'
   | 'INVALID_TARGET'
   | 'TARGET_DEAD'
-  | 'GAME_ALREADY_OVER';
+  | 'GAME_ALREADY_OVER'
+  /** The actor or target is the host/moderator — a pure spectator role
+   * that never acts, votes, nominates, or is targetable (see Player.isHost's
+   * doc comment in @mafia/shared/entities.ts). Distinct from PLAYER_DEAD/
+   * INVALID_TARGET so a rejection here is unambiguous in logs/telemetry:
+   * this player exists and is alive, they're just never a game
+   * participant. */
+  | 'NOT_A_PARTICIPANT';
 
 export function ok<T>(value: T): EngineResult<T> {
   return { ok: true, value };
@@ -57,7 +66,17 @@ export function reject<T>(reason: EngineRejectionReason, message: string): Engin
 export type EngineEffect =
   | { type: 'NARRATION'; text: string }
   | { type: 'PRIVATE_DETECTIVE_RESULT'; playerId: PlayerId; result: DetectiveResult }
-  | { type: 'PLAYER_DIED'; playerId: PlayerId; cause: 'MAFIA_KILL' | 'VOTE_ELIMINATION' }
+  | { type: 'PLAYER_DIED'; playerId: PlayerId; role: Role; cause: 'MAFIA_KILL' | 'VOTE_ELIMINATION' }
+  /** DAY_VOTE resolved with no elimination because the leading vote count
+   * was shared by more than one target — distinct from a phase that simply
+   * had no votes cast (see engine/voting.ts's resolveVote), so the caller
+   * (and eventually the UI) can narrate "it was a tie" rather than a
+   * generic "nothing happened." */
+  | { type: 'VOTE_TIED' }
+  /** DAY_DISCUSSION resolved with no one nominated — the following
+   * DAY_VOTE's shortlist fell back to every living player rather than a
+   * real shortlist (see engine/nominations.ts's resolveNominations). */
+  | { type: 'NOMINATION_OPEN' }
   | { type: 'GAME_ENDED'; reason: GameEndReason; winningTeam?: Team };
 
 /** Common shape for a "state transition + effects" result, used by the

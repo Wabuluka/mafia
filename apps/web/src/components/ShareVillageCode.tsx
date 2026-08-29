@@ -12,21 +12,26 @@ import { useState } from 'react';
 
 export interface ShareVillageCodeProps {
   code: string;
+  /** Purely cosmetic display name (see VillageDocument.name's doc comment
+   * on the server) — shown above the code and folded into the share
+   * text/title so an invite reads as "Join Shadowy Hollow" rather than
+   * just a bare 4-character code. */
+  name: string;
   /** Full joinable URL, e.g. `https://mafia.app/join?code=ABCD` — used as
    * the share payload / copy target so a tapped link goes straight into
    * the join flow instead of just handing over the bare code. */
   joinUrl: string;
 }
 
-export function ShareVillageCode({ code, joinUrl }: ShareVillageCodeProps) {
+export function ShareVillageCode({ code, name, joinUrl }: ShareVillageCodeProps) {
   const [copied, setCopied] = useState(false);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   async function handleShare() {
     try {
       await navigator.share({
-        title: 'Join my Mafia game',
-        text: `Join my Mafia game — code ${code}`,
+        title: `Join ${name}`,
+        text: `Join my Mafia game, ${name} — code ${code}`,
         url: joinUrl,
       });
     } catch {
@@ -51,6 +56,7 @@ export function ShareVillageCode({ code, joinUrl }: ShareVillageCodeProps) {
 
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl bg-elevated p-5">
+      <span className="text-center text-lg font-bold text-base-content">{name}</span>
       <span className="text-sm text-base-content/60">Village code</span>
       <span className="select-all text-4xl font-black tracking-[0.3em] text-primary" aria-label={`Village code ${code.split('').join(' ')}`}>
         {code}
@@ -75,7 +81,7 @@ export function ShareVillageCode({ code, joinUrl }: ShareVillageCodeProps) {
           onClick={handleCopy}
           className={[
             'flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-base font-semibold transition-colors motion-reduce:transition-none',
-            copied ? 'bg-village-accent/20 text-village-accent' : 'bg-white/10 text-base-content active:bg-white/15',
+            copied ? 'bg-village-accent/20 text-village-accent' : 'bg-base-content/10 text-base-content active:bg-base-content/15',
           ].join(' ')}
         >
           {copied ? (

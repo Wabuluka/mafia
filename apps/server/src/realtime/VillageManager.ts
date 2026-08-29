@@ -57,6 +57,39 @@ export interface GameSession {
    * — "was my vote timer just shortened out from under me?" — that this
    * app doesn't attempt to solve). */
   phaseDurationOverridesMs: Partial<Record<ConfigurablePhaseDurationKey, number>>;
+  /** Set while the host has paused the current phase's timer (see
+   * handlers/pauseTimer.ts and phaseLoop.ts's `pauseCurrentPhase`/
+   * `resumeCurrentPhase`). Holds the time remaining at the moment of pause
+   * so `resumeCurrentPhase` can grant exactly that much time back, never a
+   * fresh full duration. Mirrors — and must stay in sync with —
+   * `session.state.phaseTimer.pausedAt`, which is the client-visible half
+   * of the same fact; this field is the server-only bookkeeping needed to
+   * actually reschedule the deadline on resume. `undefined` whenever the
+   * phase isn't paused (including LOBBY/GAME_OVER, which have no timer at
+   * all). */
+  pausedRemainingMs?: number;
+  /** Re-entrancy guard for `advancePhase` (see phaseLoop.ts). Set true for
+   * the duration of one resolution (including its `await`ed persistence
+   * writes) and false again once it's fully applied. `advancePhase` can be
+   * reached three ways — the scheduled deadline, `tryResolveEarly`, or the
+   * host's `endPhaseNow` — and while today's callers happen to invoke it
+   * only from synchronous socket-event dispatch (making a same-tick race
+   * effectively impossible), this flag makes that safety explicit and
+   * future-proof rather than resting on a timing argument: a second call
+   * that lands while one is already in flight is a no-op instead of a
+   * double resolution (double death/win-check/persistence write).
+   * `undefined`/false whenever no resolution is in progress. */
+  resolving?: boolean;
+  /** Players awaiting host approval, keyed by playerId — the in-memory,
+   * live-session counterpart to VillageDocument.pendingPlayerIds (Mongo).
+   * NOT part of `state.players`: a pending player has no role, no vote,
+   * isn't counted anywhere the engine looks at the roster, and is
+   * completely invisible to every OTHER player's PlayerView — only the
+   * host's private channel ever hears about this map's contents (see
+   * `joinRequestsUpdated`). Holds each requester's socket id too, so
+   * `respondToJoinRequest` can notify them directly and so a disconnect
+   * mid-wait can be cleaned up without a linear scan of every socket. */
+  pendingRequests: Map<PlayerId, { playerName: string; socketId: string; requestedAt: number }>;
 }
 
 export class VillageManager {

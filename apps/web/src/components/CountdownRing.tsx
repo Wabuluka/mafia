@@ -90,7 +90,7 @@ export function CountdownRing({
           r={radius}
           fill="none"
           strokeWidth={strokeWidth}
-          className="stroke-white/10"
+          className="stroke-base-content/10"
         />
         <circle
           cx={size / 2}

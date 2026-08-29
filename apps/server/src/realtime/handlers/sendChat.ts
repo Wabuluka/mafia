@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { SendChatPayloadSchema, type ChatChannel } from '@mafia/shared';
 import { broadcastStateToVillage, gameVillage, playerChannel, type GameServer, type GameSocket } from '../emit';
-import { ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
+import { ackError, ackOk, parseOrAck, requireGameSession, requirePlayerInSession, type HandlerAck } from '../handlerContext';
 import { villageManager, type GameSession } from '../VillageManager';
 
 /** Determines which channel a message from `senderId` actually belongs to,
@@ -36,6 +36,37 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
 
     const channel = resolveChannelFor(session, socket.player._id);
 
+    // DAY chat no longer exists: DAY_DISCUSSION is now a public-nomination
+    // round (see engine/nominations.ts and handlers/submitNomination.ts),
+    // and DAY_VOTE never had free chat of its own — nominating is the
+    // day's entire "communication" mechanic, so a would-be DAY message is
+    // rejected outright rather than silently accepted into a channel the
+    // client no longer renders. Enforced server-side (not just by the
+    // client simply never calling sendChat) — same defense-in-depth
+    // posture as the mafia chat lock just below.
+    if (channel === 'DAY') {
+      ackError(ack, {
+        code: 'INVALID_PHASE',
+        message: 'Discussion is nomination-only now — chat has been replaced by public nominations.',
+      });
+      return;
+    }
+
+    // Mafia chat lock: once the moderator-driven night sequence has moved
+    // past MAFIA (the kill target is locked in — see @mafia/shared's
+    // NightSubPhaseSchema and handlers/advanceNightSubPhase.ts), the mafia
+    // channel stops accepting new messages for the rest of that night.
+    // "Deleted by morning" purges the channel's history at resolution
+    // regardless (see phaseLoop.ts's advancePhase), so this only affects
+    // mid-night behavior: no new messages once it's someone else's turn.
+    if (channel === 'MAFIA' && session.state.phase === 'NIGHT' && session.state.nightSubPhase !== 'MAFIA') {
+      ackError(ack, {
+        code: 'INVALID_PHASE',
+        message: 'Mafia chat is locked for tonight — the kill target is already locked in.',
+      });
+      return;
+    }
+
     const message = {
       id: randomUUID(),
       channel,
@@ -48,7 +79,13 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
     session.state = { ...session.state, chatLog: [...session.state.chatLog, message] };
     villageManager.setState(session.villageCode, session.state);
 
-    if (session.gameId) {
+    // MAFIA-channel chat is deliberately never queued for persistence: it's
+    // purged from live state entirely once the night resolves (see
+    // phaseLoop.ts's advancePhase, "deleted by morning") and is meant to
+    // leave no trace afterward — not in the append-only game_events log
+    // either, or a host/admin could reconstruct it from Mongo even though
+    // no player ever could again.
+    if (session.gameId && channel !== 'MAFIA') {
       session.pendingEvents.push({ gameId: session.gameId, type: 'CHAT', payload: { message } });
     }
 
@@ -71,7 +108,7 @@ export function registerSendChatHandler(io: GameServer, socket: GameSocket): voi
     // Also refresh full state so a late-joining client's chatLog (already
     // filtered per-recipient by redactStateFor) picks up the new message
     // even if they missed the direct chatMessage emit above.
-    broadcastStateToVillage(io, session.state);
+    broadcastStateToVillage(io, session);
     ackOk(ack);
   });
 }

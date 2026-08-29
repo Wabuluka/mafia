@@ -3,24 +3,31 @@ import type { Config } from 'tailwindcss';
 // ---------------------------------------------------------------------------
 // Design system foundation. Two layers:
 //
-// 1. A custom daisyUI theme ("mafia", defined below in `daisyui.themes`)
-//    supplying the base palette daisyUI's own components read
-//    (primary/secondary/accent/base-100.../success/warning/error). This is
-//    a genuinely dark theme, not "dark mode as an afterthought":
-//    desaturated, low-luminance surfaces suited to a game actually played
-//    in a dim room at night, where a bright white card would be startling
-//    and would blow out night vision at a table.
+// 1. Two custom daisyUI themes, defined below in `daisyui.themes`, that the
+//    app switches between to mirror the in-game day/night cycle (see
+//    lib/useThemeSync.ts for the switching mechanism):
+//      "mafia" — a genuinely dark theme, not "dark mode as an afterthought":
+//        desaturated, low-luminance surfaces suited to a game actually
+//        played in a dim room at night, where a bright white card would be
+//        startling and blow out night vision at a table. Active during
+//        NIGHT, LOBBY, and GAME_OVER — the game's dark bookends.
+//      "day" — a real light theme (not a mere color-temperature tint) for
+//        DAY_DISCUSSION/DAY_VOTE: warm, paper-toned, avoiding a cold
+//        clinical white. Both themes share the exact same semantic token
+//        NAMES (see layer 2) with different HSL values, so components never
+//        branch on which theme is active — they just use the token and it
+//        resolves correctly either way.
 //
 // 2. Semantic tokens layered on top via `theme.extend.colors`, each backed
-//    by a CSS custom property (defined inline on the same "mafia" theme
-//    object, so every component uses `bg-surface` / `text-mafia-accent` /
-//    etc. instead of a raw Tailwind color name scattered through the tree).
+//    by a CSS custom property (defined inline on each theme object, so
+//    every component uses `bg-surface` / `text-mafia-accent` / etc.
+//    instead of a raw Tailwind color name scattered through the tree).
 //    The naming is deliberately about ROLE, not hue: `mafia-accent`
 //    documents intent ("this is the mafia-coded color") in a way
 //    `bg-rose-900` never would, and lets the actual color shift later
 //    without touching a single component.
 //
-//      surface         — the base app background (darkest layer)
+//      surface         — the base app background (darkest/lightest layer)
 //      elevated         — a card/tile/panel sitting above `surface`
 //      elevated-2         — a modal/sheet sitting above `elevated` (two
 //                            steps of elevation is enough for this app's
@@ -107,6 +114,24 @@ const config: Config = {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.55' },
         },
+        // Slow horizontal drift for ambient fog/mist layers (see
+        // HomeAtmosphere in app/page.tsx) — transform-only, so it's free
+        // under prefers-reduced-motion via the same global rule every
+        // other animation here relies on (see globals.css).
+        drift: {
+          '0%': { transform: 'translateX(-6%)' },
+          '50%': { transform: 'translateX(6%)' },
+          '100%': { transform: 'translateX(-6%)' },
+        },
+        // A very slow, low-amplitude opacity breathe for a warm ambient
+        // glow — distinct from `ring-pulse` (which is fast/sharp, tuned
+        // for a countdown/star twinkle) in both speed and amplitude, so a
+        // glow using this reads as "a light source gently flickering",
+        // not "a UI element demanding attention".
+        glow: {
+          '0%, 100%': { opacity: '0.55' },
+          '50%': { opacity: '0.85' },
+        },
       },
       animation: {
         'sheet-in': 'sheet-in 0.24s cubic-bezier(0.32, 0.72, 0, 1)',
@@ -114,14 +139,20 @@ const config: Config = {
         'scale-in': 'scale-in 0.18s ease-out',
         'toast-in': 'toast-in 0.22s cubic-bezier(0.32, 0.72, 0, 1)',
         'ring-pulse': 'ring-pulse 1.6s ease-in-out infinite',
+        drift: 'drift 18s ease-in-out infinite',
+        'drift-slow': 'drift 26s ease-in-out infinite',
+        glow: 'glow 5s ease-in-out infinite',
       },
     },
   },
   // daisyUI on top of Tailwind, per spec: gives us accessible, pre-styled
   // components (buttons, modals, alerts) so we spend the JS budget on game
-  // logic, not a component library. Only the custom "mafia" theme is
-  // registered — no default light theme, since this app never runs one;
-  // "dark theme suited to a game played in dim rooms" is the only mode.
+  // logic, not a component library. Two themes are registered — "mafia"
+  // (dark, night/lobby/game-over) and "day" (light, discussion/vote) — see
+  // this file's header comment and lib/useThemeSync.ts for how the app
+  // switches between them. `darkTheme` below only controls daisyUI's
+  // `prefers-color-scheme: dark` media-query fallback; it's irrelevant to
+  // the actual switching mechanism, which sets `data-theme` explicitly.
   plugins: [require('daisyui')],
   daisyui: {
     themes: [
@@ -160,6 +191,49 @@ const config: Config = {
           '--color-danger': '4 62% 55%',
           '--color-mafia-accent': '355 65% 52%',
           '--color-village-accent': '203 55% 58%',
+          // Per-player avatar lightness (see PlayerTile.tsx) — its accent
+          // hue is computed per-player, but the LIGHTNESS needs to flip
+          // with the theme (dark bg/light text here, the reverse on "day")
+          // for the pairing to stay legible against either base surface.
+          '--player-tile-bg-l': '22%',
+          '--player-tile-text-l': '82%',
+        },
+        day: {
+          'color-scheme': 'light',
+          // A warm, slightly desaturated off-white — not a cold clinical
+          // white — reads as "daylight" without blowing out a phone screen
+          // indoors or out. Mirrors "mafia"'s cold-near-black in reverse:
+          // warm-near-white.
+          'base-100': '#faf6ef',
+          'base-200': '#f0ead9',
+          'base-300': '#e4dcc5',
+          'base-content': '#2a2418',
+          // Primary stays the same warm-amber family as "mafia" (brand
+          // continuity across themes) but deepened for contrast against a
+          // light base instead of a dark one.
+          primary: '#b5762a',
+          'primary-content': '#fff8ec',
+          secondary: '#6b6355',
+          'secondary-content': '#faf6ef',
+          accent: '#3a5cc9',
+          'accent-content': '#faf6ef',
+          neutral: '#e4dcc5',
+          'neutral-content': '#4a4536',
+          info: '#2f7aa8',
+          success: '#3f8a52',
+          warning: '#a6741f',
+          error: '#b23b32',
+          '--color-surface': '42 38% 95%',
+          '--color-elevated': '42 32% 91%',
+          '--color-elevated-2': '40 28% 86%',
+          '--color-danger': '4 55% 45%',
+          '--color-mafia-accent': '355 55% 42%',
+          '--color-village-accent': '203 60% 38%',
+          // Inverted from "mafia" — a light background needs a much
+          // brighter avatar chip with darker text to stay legible; see the
+          // comment on "mafia"'s own pair above.
+          '--player-tile-bg-l': '88%',
+          '--player-tile-text-l': '28%',
         },
       },
     ],

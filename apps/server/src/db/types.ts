@@ -10,6 +10,7 @@ import type {
   ChatMessage,
   GameEndReason,
   NightAction,
+  Nomination,
   Phase,
   PlayerId,
   PublicPlayer,
@@ -22,10 +23,23 @@ import type {
  * abandoned (see `indexes.ts`), or promoted into a `GameDocument` on start. */
 export interface VillageDocument {
   _id: VillageCode; // the village code itself is the primary key — see indexes.ts
+  /** Purely cosmetic — shown in the lobby/share screen alongside the code
+   * so a group can say "join Raven Hollow" instead of just reading out a
+   * 4-character code. Never used to look up a village (the code remains
+   * the only identifier); two villages can share the same name with no
+   * conflict. */
+  name: string;
   hostId: PlayerId;
   maxPlayers: number;
   minPlayers: number;
   playerIds: PlayerId[];
+  /** New players awaiting host approval (see http/routes/villages.routes.ts's
+   * POST /villages/:code/join) — never counted toward `maxPlayers` capacity
+   * and never a member of the live game roster until promoted into
+   * `playerIds`. Only meaningful in LOBBY; a village that's IN_GAME doesn't
+   * accept new join requests at all (approval is a lobby-only concept — see
+   * that route's own doc comment). */
+  pendingPlayerIds: PlayerId[];
   status: 'LOBBY' | 'IN_GAME' | 'CLOSED';
   createdAt: Date;
   /** Bumped on any lobby activity; TTL index expires on this field. */
@@ -42,8 +56,11 @@ export interface GameDocument {
   currentPhase: Phase;
   roundNumber: number;
   /** Player roster with roles, captured at game start (roles are fixed once
-   * assigned) so a completed game can be reviewed without replaying events. */
-  players: Array<PublicPlayer & { role: Role }>;
+   * assigned) so a completed game can be reviewed without replaying events.
+   * `role` is OPTIONAL, not required — the host/moderator is deliberately
+   * never assigned one (see Player.isHost's doc comment in
+   * @mafia/shared/entities.ts) and is still a real roster entry here. */
+  players: Array<PublicPlayer & { role?: Role }>;
   endReason?: GameEndReason;
   winningTeam?: string;
   startedAt: Date;
@@ -62,6 +79,7 @@ export interface GameDocument {
 export type GameEventDocument =
   | GameEventBase<'NIGHT_ACTION', { action: NightAction }>
   | GameEventBase<'VOTE', { vote: Vote }>
+  | GameEventBase<'NOMINATION', { nomination: Nomination }>
   | GameEventBase<'CHAT', { message: ChatMessage }>
   | GameEventBase<'PHASE_CHANGED', { fromPhase: Phase; toPhase: Phase; roundNumber: number }>
   | GameEventBase<'PLAYER_JOINED', { playerId: PlayerId }>
