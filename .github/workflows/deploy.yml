@@ -34,10 +34,13 @@ jobs:
       - run: npm run build -w apps/server
       - run: npm run build -w apps/web
         env:
-          # Build-time inlined; real values come from Vercel on the actual
-          # deploy. Dummies here just let `next build` succeed.
-          NEXT_PUBLIC_API_URL: https://example.com
-          NEXT_PUBLIC_SOCKET_URL: https://example.com
+          # The real deploy sets API_ORIGIN on the Render mafia-web service
+          # (dashboard), pointing at the Render backend, e.g.
+          #   API_ORIGIN=https://mafia-server-lz15.onrender.com
+          # next.config.mjs rewrites /api and /socket.io through it so the
+          # session cookie stays first-party. A dummy here just lets
+          # `next build` succeed in CI.
+          API_ORIGIN: https://example.com
 
   deploy-server:
     name: Deploy server (Render)
@@ -50,30 +53,11 @@ jobs:
           curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 
   deploy-web:
-    name: Deploy web (Vercel)
+    name: Deploy web (Render)
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      # Build happens on Vercel's builders (not --prebuilt): Vercel runs the
-      # buildCommand from apps/web/vercel.json, which hops to the repo root
-      # and `npm ci` the whole workspace. Doing the build here instead runs
-      # into hoisted-dep resolution (styled-jsx lives in the root
-      # node_modules, not apps/web's).
-      - name: Deploy to Vercel
-        working-directory: apps/web
+      - name: Trigger Render deploy
         run: |
-          npm i -g vercel@latest
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel deploy --prod --token="$VERCEL_TOKEN"
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          curl -fsS -X POST "${{ secrets.RENDER_WEB_DEPLOY_HOOK_URL }}"

@@ -14,6 +14,9 @@ const API_ORIGIN = (process.env.API_ORIGIN ?? 'http://localhost:4000').replace(/
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Emit a self-contained server bundle (server.js + minimal node_modules)
+  // so the Docker runtime stage can ship without the full workspace install.
+  output: 'standalone',
   // Transpile the shared workspace package since it ships raw TS.
   transpilePackages: ['@mafia/shared'],
   async rewrites() {
