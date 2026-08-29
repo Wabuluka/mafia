@@ -11,8 +11,8 @@
     // tsconfig.json) has something to `require()` at runtime instead of
     // raw .ts files a plain `node dist/index.js` can't load (see
     // apps/server's Dockerfile for where this actually gets invoked).
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "node16",
+    "moduleResolution": "node16",
     "outDir": "dist",
     "rootDir": "src",
     "noEmit": false,
