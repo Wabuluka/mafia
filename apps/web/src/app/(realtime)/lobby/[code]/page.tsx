@@ -25,7 +25,6 @@ import { RoleDistributionList } from '@/components/RoleDistributionList';
 import { ShareVillageCode } from '@/components/ShareVillageCode';
 import { useToast } from '@/components/Toast';
 import { ApiError, createOrResumeSession, getVillage } from '@/lib/api';
-import { useHasSeenTutorial } from '@/lib/useHasSeenTutorial';
 import { useJoinRequests } from '@/lib/useJoinRequests';
 import { useSocket } from '@/lib/socket-context';
 import { useThemeSync } from '@/lib/useThemeSync';
@@ -51,7 +50,6 @@ export default function LobbyPage() {
   const [starting, setStarting] = useState(false);
   const [villageName, setVillageName] = useState<string | null>(null);
   const joinRequests = useJoinRequests();
-  const [hasSeenTutorial, markTutorialSeen] = useHasSeenTutorial();
 
   const parsedCode = VillageCodeSchema.safeParse((params.code ?? '').toUpperCase());
   const villageCode: VillageCode | null = parsedCode.success ? parsedCode.data : null;
@@ -128,20 +126,10 @@ export default function LobbyPage() {
     if (hostTransferredTo) toast.show(`${hostTransferredTo} is now hosting.`, { tone: 'info' });
   }, [hostTransferredTo, toast]);
 
-  // Auto-surface How-to-Play exactly once, the first time a player's
-  // browser ever reaches a live lobby (gated on `view` existing so this
-  // fires once the roster/game state has actually loaded, not the instant
-  // the route mounts) — a one-time nudge for a brand-new player, not a
-  // forced modal on every visit. `markTutorialSeen` is called immediately
-  // rather than on modal close, matching the "opened once" intent even if
-  // the player dismisses it right away without reading.
-  useEffect(() => {
-    if (view && !hasSeenTutorial) {
-      setHowToPlayOpen(true);
-      markTutorialSeen();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, hasSeenTutorial]);
+  // How-to-Play is opt-in only — the HowToPlayButton in the header opens it.
+  // It is deliberately NOT auto-surfaced on entering the lobby: on browsers
+  // where the "seen" flag doesn't persist (private mode, cleared storage)
+  // the one-time nudge turned into a modal popping up on every visit.
 
   const self = view?.players.find((p) => p.id === view.you.playerId);
   const isHost = self?.isHost ?? false;

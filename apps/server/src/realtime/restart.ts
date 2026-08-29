@@ -44,7 +44,7 @@ import { gamesRepository, villagesRepository } from '../db';
 import type { GameDocument } from '../db/types';
 import { logger } from '../logger';
 import { villageManager, type GameSession } from './VillageManager';
-import { broadcastStateToVillage, type GameServer } from './emit';
+import { type GameServer } from './emit';
 import { startCurrentPhase } from './phaseLoop';
 import { persistGameAbandoned } from './persistence';
 
@@ -149,8 +149,8 @@ export async function recoverInProgressGames(io: GameServer): Promise<{ resumed:
     // (with no one around to ever start it) would be strictly worse than
     // resuming automatically at the cost of losing pause/reveal state,
     // which restart.ts already documents as not preserved across a crash.
+    // startCurrentPhase broadcasts the started timer to the village itself.
     startCurrentPhase(io, session, Date.now());
-    broadcastStateToVillage(io, session);
 
     resumed += 1;
     logger.info('resumed game on restart recovery', {

@@ -135,6 +135,13 @@ export function startCurrentPhase(io: GameServer, session: GameSession, startedA
   session.deadline = scheduleDeadline(endsAt, () => {
     void advancePhase(io, session);
   });
+
+  // Push the freshly-started timer to every client NOW — same as
+  // pause/resumeTimer below. Without this the countdown only appears on a
+  // player's screen at the next unrelated state broadcast (a chat message,
+  // someone acting), so "moderator started the timer" looks like nothing
+  // happened.
+  broadcastStateToVillage(io, session);
 }
 
 /**

@@ -370,6 +370,9 @@ function MafiaNightContent({ view, stagedTargetId, onStage, locked, isMyTurn }: 
   const teammateIds = new Set(view.you.mafiaTeammateIds ?? []);
   const players = buildTargetGridPlayers(view, { accentTeammateIds: teammateIds });
   const mafiaMessages = view.chatLog.filter((m: ChatMessage) => m.channel === 'MAFIA');
+  // A lone mafia has no one to coordinate with — the family chat is just
+  // dead UI, so don't render it at all in that case.
+  const hasFamily = teammateIds.size > 0;
   // Mafia chat locks the instant the moderator moves the sequence past
   // MAFIA (see server/realtime/handlers/sendChat.ts) — mirrored here so a
   // send attempt after the lock is disabled client-side rather than
@@ -382,13 +385,15 @@ function MafiaNightContent({ view, stagedTargetId, onStage, locked, isMyTurn }: 
       {view.you.mafiaNightTargets && (
         <MafiaTally targets={view.you.mafiaNightTargets} players={view.players} selfPlayerId={view.you.playerId} />
       )}
-      <MafiaChatPanel
-        messages={mafiaMessages}
-        selfPlayerId={view.you.playerId}
-        onSend={(body) => void emit.sendChat({ villageCode: view.villageCode, body })}
-        disabled={chatLocked}
-        disabledMessage={chatLocked ? "The kill target is locked in — chat is closed for tonight." : undefined}
-      />
+      {hasFamily && (
+        <MafiaChatPanel
+          messages={mafiaMessages}
+          selfPlayerId={view.you.playerId}
+          onSend={(body) => void emit.sendChat({ villageCode: view.villageCode, body })}
+          disabled={chatLocked}
+          disabledMessage={chatLocked ? "The kill target is locked in — chat is closed for tonight." : undefined}
+        />
+      )}
     </div>
   );
 }

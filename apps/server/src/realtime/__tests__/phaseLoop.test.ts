@@ -14,10 +14,17 @@ import { buildState, pid } from '../../engine/__tests__/helpers';
 import type { GameSession } from '../VillageManager';
 import { villageManager } from '../VillageManager';
 import type { GameServer } from '../emit';
-import { advancePhase, pauseCurrentPhase, resumeCurrentPhase, revealPendingNarration, tryResolveEarly } from '../phaseLoop';
+import { advancePhase, pauseCurrentPhase, resumeCurrentPhase, revealPendingNarration, startCurrentPhase, tryResolveEarly } from '../phaseLoop';
 
 function fakeIo(): GameServer {
   return { to: () => ({ emit: vi.fn() }) } as unknown as GameServer;
+}
+
+/** Like fakeIo(), but every `io.to(...).emit(...)` funnels through one
+ * shared spy so a test can assert the village actually received a push. */
+function spyingIo(): { io: GameServer; emit: ReturnType<typeof vi.fn> } {
+  const emit = vi.fn();
+  return { io: { to: () => ({ emit }) } as unknown as GameServer, emit };
 }
 
 function fakeSession(overrides: Partial<GameSession> = {}): GameSession {
@@ -40,6 +47,40 @@ function fakeSession(overrides: Partial<GameSession> = {}): GameSession {
   villageManager.create(session);
   return session;
 }
+
+describe('startCurrentPhase', () => {
+  it('stamps a full-duration timer AND broadcasts it to the village immediately', () => {
+    const state = buildState({ phase: 'DAY_DISCUSSION', players: [{ id: 'v1', name: 'V', role: 'VILLAGER' }] });
+    const session = fakeSession({ state });
+    const { io, emit } = spyingIo();
+
+    const before = Date.now();
+    startCurrentPhase(io, session, before);
+
+    expect(session.state.phaseTimer).toBeDefined();
+    expect(session.state.phaseTimer?.phase).toBe('DAY_DISCUSSION');
+    expect(session.state.phaseTimer?.startedAt).toBe(before);
+    expect(session.state.phaseTimer?.endsAt).toBe(before + (session.state.phaseTimer?.durationMs ?? 0));
+    expect(session.deadline).toBeDefined();
+    // The whole point of this test: a player's client learns about the
+    // started countdown NOW, not at some later unrelated broadcast.
+    expect(emit).toHaveBeenCalled();
+
+    if (session.deadline) clearTimeout(session.deadline.handle);
+  });
+
+  it('clears the timer and does not schedule/broadcast for a non-timed phase', () => {
+    const state = buildState({ phase: 'LOBBY', players: [{ id: 'v1', name: 'V', role: 'VILLAGER' }] });
+    const session = fakeSession({ state });
+    const { io, emit } = spyingIo();
+
+    startCurrentPhase(io, session);
+
+    expect(session.state.phaseTimer).toBeUndefined();
+    expect(session.deadline).toBeUndefined();
+    expect(emit).not.toHaveBeenCalled();
+  });
+});
 
 describe('pauseCurrentPhase / resumeCurrentPhase', () => {
   it('freezes the countdown: clears the deadline and stamps pausedAt', () => {

@@ -95,7 +95,12 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps) {
           </button>
         </div>
 
-        <div className="overflow-y-auto px-5 pb-4">{children}</div>
+        {/* `flex-1 min-h-0` is what makes this the scroll region: without
+         * min-h-0 a flex child won't shrink below its content height, so a
+         * tall body (long player list + join requests + duration rows)
+         * overflows the sheet's max-h instead of scrolling inside it, and
+         * the bottom of the list becomes unreachable on a short viewport. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">{children}</div>
 
         {footer && <div className="border-t border-base-content/10 px-5 py-3">{footer}</div>}
       </div>
