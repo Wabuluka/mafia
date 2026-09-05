@@ -47,6 +47,7 @@ import { useThemeSync } from '@/lib/useThemeSync';
 import { useGameLog } from '@/lib/useGameLog';
 import { useUnreadGameLog } from '@/lib/useUnreadGameLog';
 import { GameLog, GameLogButton } from '@/components/day/GameLog';
+import { ModeratorNightHistory, ModeratorNightHistoryButton } from '@/components/night/ModeratorNightHistory';
 
 export interface NightPhaseProps {
   view: PlayerView;
@@ -86,6 +87,7 @@ export function NightPhase({ view, lastPhaseChange }: NightPhaseProps) {
   const { emit, status } = useSocket();
   const toast = useToast();
   const [logOpen, setLogOpen] = useState(false);
+  const [nightHistoryOpen, setNightHistoryOpen] = useState(false);
   const [howToPlayOpen, setHowToPlayOpen] = useState(false);
   const gameLog = useGameLog(view.villageCode, lastPhaseChange);
   const [logUnread, markLogRead] = useUnreadGameLog(gameLog.length);
@@ -203,6 +205,7 @@ export function NightPhase({ view, lastPhaseChange }: NightPhaseProps) {
             <ConnectionIndicator status={status} />
             <IdentityBadge name={self?.name ?? ''} role={role} isModerator={view.you.isModerator} />
             <HowToPlayButton onClick={() => setHowToPlayOpen(true)} />
+            {view.you.isModerator && <ModeratorNightHistoryButton onClick={() => setNightHistoryOpen(true)} />}
             <GameLogButton onClick={() => { setLogOpen(true); markLogRead(); }} hasUnread={logUnread} />
           </div>
         </div>
@@ -276,6 +279,13 @@ export function NightPhase({ view, lastPhaseChange }: NightPhaseProps) {
       )}
 
       <GameLog open={logOpen} onClose={() => setLogOpen(false)} entries={gameLog} players={view.players} />
+      {view.you.isModerator && (
+        <ModeratorNightHistory
+          open={nightHistoryOpen}
+          onClose={() => setNightHistoryOpen(false)}
+          entries={view.you.moderatorNightView?.history ?? []}
+        />
+      )}
       <HowToPlayModal open={howToPlayOpen} onClose={() => setHowToPlayOpen(false)} myRole={role} />
     </div>
   );

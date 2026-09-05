@@ -121,6 +121,79 @@ export const MafiaNightTargetSchema = z.object({
 });
 export type MafiaNightTarget = z.infer<typeof MafiaNightTargetSchema>;
 
+/** One acting role's live state for the CURRENT night, as the moderator
+ * sees it while running the night sequence. Populated only in a host's
+ * `you.moderatorNightView` (see redact.ts's `buildModeratorNightView`) —
+ * never in any non-host viewer's `you`, since it carries the exact
+ * actor/target detail redaction otherwise withholds. */
+export const ModeratorNightRoleStateSchema = z.object({
+  role: z.enum(['MAFIA', 'DETECTIVE', 'DOCTOR']),
+  /** Whether any LIVING player currently holds this role — a role no one
+   * living holds is skipped by the moderator sequence entirely (mirrors
+   * `nextApplicableNightSubPhase`). */
+  hasLivingHolder: z.boolean(),
+  /** Whether a submission from this role exists for the current round. For
+   * MAFIA (possibly several actors, each able to revise) this is true once
+   * at least one has submitted. */
+  submitted: z.boolean(),
+  /** Names of the players who have submitted for this role this round —
+   * one entry for DETECTIVE/DOCTOR, one-or-more for MAFIA. */
+  actorNames: z.array(z.string()),
+  /** The effective target of this role's action this round: MAFIA's kill
+   * target (last submission wins), the DETECTIVE's mark, the DOCTOR's
+   * protection. Absent when nothing is submitted yet or the submission
+   * carried no target (an explicit skip). */
+  targetId: PlayerIdSchema.optional(),
+  targetName: z.string().optional(),
+});
+export type ModeratorNightRoleState = z.infer<typeof ModeratorNightRoleStateSchema>;
+
+/** A recap of one already-resolved night, computed from the night-action
+ * history — the moderator's scrollback log. Mirrors `resolveNight`'s own
+ * save-vs-kill logic (engine/nightActions.ts) so what the log shows always
+ * matches what actually happened that night. */
+export const ModeratorNightHistoryEntrySchema = z.object({
+  nightNumber: z.number().int().positive(),
+  mafiaTargetId: PlayerIdSchema.optional(),
+  mafiaTargetName: z.string().optional(),
+  doctorTargetId: PlayerIdSchema.optional(),
+  doctorTargetName: z.string().optional(),
+  /** True when the doctor's protection landed on the mafia's kill target
+   * AND was not a blocked repeat protection — i.e. the kill was prevented. */
+  saveLanded: z.boolean(),
+  /** The player who actually died that night, if any (absent = no death:
+   * saved, no kill submitted, or the target was already dead). */
+  diedId: PlayerIdSchema.optional(),
+  diedName: z.string().optional(),
+  diedRole: RoleSchema.optional(),
+  detectiveTargetId: PlayerIdSchema.optional(),
+  detectiveTargetName: z.string().optional(),
+  /** The detective's result for that night: whether their target was
+   * mafia. Absent when the detective did not act (or holds no living
+   * detective). */
+  detectiveFoundMafia: z.boolean().optional(),
+});
+export type ModeratorNightHistoryEntry = z.infer<typeof ModeratorNightHistoryEntrySchema>;
+
+/** The host-only night dashboard: live per-role action state for the
+ * current night, plus a recap of every prior night. See
+ * `buildModeratorNightView` in engine/redact.ts. */
+export const ModeratorNightViewSchema = z.object({
+  /** Present only while `phase === 'NIGHT'` — the live acted-status +
+   * target for each acting role this round. Absent outside NIGHT (there's
+   * no night in progress to report on). */
+  currentRound: z
+    .object({
+      nightNumber: z.number().int().positive(),
+      roles: z.array(ModeratorNightRoleStateSchema),
+    })
+    .optional(),
+  /** Oldest-first recap of every night that has already resolved. Empty
+   * before the first night resolves. */
+  history: z.array(ModeratorNightHistoryEntrySchema),
+});
+export type ModeratorNightView = z.infer<typeof ModeratorNightViewSchema>;
+
 export const YouSchema = z.object({
   playerId: PlayerIdSchema,
   /** Absent while the village is still in the LOBBY (roles aren't assigned
@@ -169,6 +242,12 @@ export const YouSchema = z.object({
       totalActingRoles: z.number().int().nonnegative(),
     })
     .optional(),
+  /** Populated ONLY for the host/moderator — the night dashboard: live
+   * per-role acted-status and target for the current night, plus a recap
+   * of every resolved night. Carries actor/target identities that no
+   * non-host viewer's `you` ever contains; gated behind `viewer.isHost`
+   * in redact.ts's `buildYou`, same as `pendingNarration` is. */
+  moderatorNightView: ModeratorNightViewSchema.optional(),
 });
 export type You = z.infer<typeof YouSchema>;
 

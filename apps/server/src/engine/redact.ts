@@ -15,7 +15,16 @@
 // something it should), which is a bug you notice, not a leak you don't.
 // ---------------------------------------------------------------------------
 
-import type { FullGameState, PlayerId, PlayerView, PublicPlayer, You } from '@mafia/shared';
+import type {
+  FullGameState,
+  ModeratorNightHistoryEntry,
+  ModeratorNightRoleState,
+  ModeratorNightView,
+  PlayerId,
+  PlayerView,
+  PublicPlayer,
+  You,
+} from '@mafia/shared';
 import { NIGHT_ACTING_ROLES } from './nightActions';
 
 /** Builds the `you` block: private knowledge belonging only to `viewerId`.
@@ -82,7 +91,116 @@ function buildYou(state: FullGameState, viewerId: PlayerId): You {
     you.deadNightProgress = buildDeadNightProgress(state);
   }
 
+  // Host-only night dashboard — carries the exact actor/target identities
+  // the rest of this function is careful NOT to hand any other viewer. Same
+  // gate as `pendingNarration` (see redactStateFor below): `viewer.isHost`,
+  // nothing else. A non-host `you` never has this field at all.
+  if (viewer.isHost) {
+    you.moderatorNightView = buildModeratorNightView(state);
+  }
+
   return you;
+}
+
+const MODERATOR_NIGHT_ROLES = ['MAFIA', 'DETECTIVE', 'DOCTOR'] as const;
+
+/** Builds the host-only night dashboard: live per-role acted-status +
+ * target for the current night (only while `phase === 'NIGHT'`), plus an
+ * oldest-first recap of every night that has already resolved. All of it
+ * is derived from `state.nightActions` + `state.players` — the same
+ * sources `resolveNight` reads — so the recap's save-vs-kill verdict
+ * always matches what actually happened. */
+function buildModeratorNightView(state: FullGameState): ModeratorNightView {
+  const nameOf = (id: PlayerId | undefined): string | undefined =>
+    id === undefined ? undefined : state.players.find((p) => p.id === id)?.name;
+
+  let currentRound: ModeratorNightView['currentRound'];
+  if (state.phase === 'NIGHT') {
+    const roundActions = state.nightActions.filter((a) => a.nightNumber === state.roundNumber);
+    const roles: ModeratorNightRoleState[] = MODERATOR_NIGHT_ROLES.map((role) => {
+      const forRole = roundActions.filter((a) => a.actorRole === role);
+      // MAFIA: last submission wins for the kill target (mirrors
+      // resolveNight's `.at(-1)`); DETECTIVE/DOCTOR are single-shot.
+      const effective = role === 'MAFIA' ? forRole.at(-1) : forRole[0];
+      const actorNames = [
+        ...new Set(
+          forRole
+            .map((a) => nameOf(a.actorId))
+            .filter((n): n is string => n !== undefined),
+        ),
+      ];
+      return {
+        role,
+        hasLivingHolder: state.players.some(
+          (p) => p.status === 'ALIVE' && p.role === role,
+        ),
+        submitted: forRole.length > 0,
+        actorNames,
+        targetId: effective?.targetId,
+        targetName: nameOf(effective?.targetId),
+      };
+    });
+    currentRound = { nightNumber: state.roundNumber, roles };
+  }
+
+  // Every night number that has at least one recorded action AND is
+  // strictly before the current round (a night with actions but == the
+  // current round is still in progress, reported via `currentRound`).
+  const resolvedNights = [
+    ...new Set(
+      state.nightActions
+        .map((a) => a.nightNumber)
+        .filter((n) => state.phase !== 'NIGHT' || n < state.roundNumber),
+    ),
+  ].sort((a, b) => a - b);
+
+  const history: ModeratorNightHistoryEntry[] = resolvedNights.map((nightNumber) => {
+    const actions = state.nightActions.filter((a) => a.nightNumber === nightNumber);
+    const mafiaAction = actions.filter((a) => a.actorRole === 'MAFIA').at(-1);
+    const doctorAction = actions.find((a) => a.actorRole === 'DOCTOR');
+    const detectiveAction = actions.find((a) => a.actorRole === 'DETECTIVE');
+
+    // Mirror resolveNight's no-repeat-protection rule: a doctor protecting
+    // the same target as the immediately preceding night is a no-op save.
+    const doctorRepeated =
+      doctorAction?.targetId !== undefined &&
+      state.nightActions.some(
+        (a) =>
+          a.actorRole === 'DOCTOR' &&
+          a.nightNumber === nightNumber - 1 &&
+          a.targetId === doctorAction.targetId,
+      );
+    const effectiveSaveTargetId = doctorRepeated ? undefined : doctorAction?.targetId;
+
+    const killTargetId = mafiaAction?.targetId;
+    const saveLanded =
+      killTargetId !== undefined && killTargetId === effectiveSaveTargetId;
+    const diedId = killTargetId !== undefined && !saveLanded ? killTargetId : undefined;
+    const victim = diedId !== undefined ? state.players.find((p) => p.id === diedId) : undefined;
+
+    const detectiveTarget =
+      detectiveAction?.targetId !== undefined
+        ? state.players.find((p) => p.id === detectiveAction.targetId)
+        : undefined;
+
+    return {
+      nightNumber,
+      mafiaTargetId: killTargetId,
+      mafiaTargetName: nameOf(killTargetId),
+      doctorTargetId: doctorAction?.targetId,
+      doctorTargetName: nameOf(doctorAction?.targetId),
+      saveLanded,
+      diedId,
+      diedName: victim?.name,
+      diedRole: victim?.role,
+      detectiveTargetId: detectiveAction?.targetId,
+      detectiveTargetName: nameOf(detectiveAction?.targetId),
+      detectiveFoundMafia:
+        detectiveAction?.targetId !== undefined ? detectiveTarget?.role === 'MAFIA' : undefined,
+    };
+  });
+
+  return { currentRound, history };
 }
 
 /** Count-only night-activity signal for a dead spectator — see

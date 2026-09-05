@@ -482,6 +482,168 @@ describe('redactStateFor', () => {
     const view = redactStateFor(state, pid('villager1'));
     expect(view.you.lastProtectedPlayerId).toBeUndefined();
   });
+
+  describe('moderatorNightView (host-only night dashboard)', () => {
+    const nightPlayers = [
+      { id: 'host', name: 'Host', isHost: true },
+      { id: 'mafia1', name: 'Mara', role: 'MAFIA' as const },
+      { id: 'doc1', name: 'Dana', role: 'DOCTOR' as const },
+      { id: 'det1', name: 'Del', role: 'DETECTIVE' as const },
+      { id: 'v1', name: 'Vic', role: 'VILLAGER' as const },
+    ];
+
+    it('is populated only for the host, never for any other viewer', () => {
+      const state = buildState({ phase: 'NIGHT', roundNumber: 1, players: nightPlayers });
+      expect(redactStateFor(state, pid('host')).you.moderatorNightView).toBeDefined();
+      for (const id of ['mafia1', 'doc1', 'det1', 'v1']) {
+        expect(redactStateFor(state, pid(id)).you.moderatorNightView).toBeUndefined();
+      }
+    });
+
+    it('reports live acted-status and target for each acting role in the current round', () => {
+      const state = buildState({
+        phase: 'NIGHT',
+        roundNumber: 1,
+        players: nightPlayers,
+        nightActions: [
+          { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v1'), nightNumber: 1, submittedAt: 1 },
+          { id: 'a2', actorId: pid('det1'), actorRole: 'DETECTIVE', targetId: pid('mafia1'), nightNumber: 1, submittedAt: 2 },
+          // doctor hasn't acted yet
+        ],
+      });
+
+      const roles = redactStateFor(state, pid('host')).you.moderatorNightView?.currentRound?.roles ?? [];
+      const byRole = Object.fromEntries(roles.map((r) => [r.role, r]));
+      expect(byRole.MAFIA).toMatchObject({ submitted: true, targetName: 'Vic', actorNames: ['Mara'] });
+      expect(byRole.DETECTIVE).toMatchObject({ submitted: true, targetName: 'Mara' });
+      expect(byRole.DOCTOR).toMatchObject({ submitted: false, targetName: undefined, actorNames: [] });
+    });
+
+    it('marks a role with no living holder as not in play, and uses last-submission-wins for MAFIA', () => {
+      const state = buildState({
+        phase: 'NIGHT',
+        roundNumber: 1,
+        players: [
+          { id: 'host', name: 'Host', isHost: true },
+          { id: 'mafia1', name: 'Mara', role: 'MAFIA' },
+          { id: 'v1', name: 'Vic', role: 'VILLAGER' },
+          { id: 'v2', name: 'Val', role: 'VILLAGER' },
+        ],
+        nightActions: [
+          { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v1'), nightNumber: 1, submittedAt: 1 },
+          { id: 'a2', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v2'), nightNumber: 1, submittedAt: 2 },
+        ],
+      });
+
+      const roles = redactStateFor(state, pid('host')).you.moderatorNightView?.currentRound?.roles ?? [];
+      const byRole = Object.fromEntries(roles.map((r) => [r.role, r]));
+      expect(byRole.MAFIA).toMatchObject({ submitted: true, targetName: 'Val' }); // last wins
+      expect(byRole.DOCTOR).toMatchObject({ hasLivingHolder: false });
+      expect(byRole.DETECTIVE).toMatchObject({ hasLivingHolder: false });
+    });
+
+    it('has no currentRound outside NIGHT, but still reports resolved-night history', () => {
+      const state = buildState({
+        phase: 'DAY_DISCUSSION',
+        roundNumber: 1,
+        players: [
+          { id: 'host', name: 'Host', isHost: true },
+          { id: 'mafia1', name: 'Mara', role: 'MAFIA' },
+          { id: 'doc1', name: 'Dana', role: 'DOCTOR' },
+          { id: 'v1', name: 'Vic', role: 'VILLAGER', status: 'DEAD' },
+        ],
+        nightActions: [
+          { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v1'), nightNumber: 1, submittedAt: 1 },
+          { id: 'a2', actorId: pid('doc1'), actorRole: 'DOCTOR', targetId: pid('doc1'), nightNumber: 1, submittedAt: 2 },
+        ],
+      });
+
+      const mnv = redactStateFor(state, pid('host')).you.moderatorNightView;
+      expect(mnv?.currentRound).toBeUndefined();
+      expect(mnv?.history).toHaveLength(1);
+      expect(mnv?.history[0]).toMatchObject({
+        nightNumber: 1,
+        mafiaTargetName: 'Vic',
+        doctorTargetName: 'Dana',
+        saveLanded: false,
+        diedName: 'Vic',
+        diedRole: 'VILLAGER',
+      });
+    });
+
+    it('history recap: save landed => no death; save missed => death', () => {
+      const base = [
+        { id: 'host', name: 'Host', isHost: true },
+        { id: 'mafia1', name: 'Mara', role: 'MAFIA' as const },
+        { id: 'doc1', name: 'Dana', role: 'DOCTOR' as const },
+        { id: 'v1', name: 'Vic', role: 'VILLAGER' as const },
+      ];
+
+      const saved = buildState({
+        phase: 'DAY_DISCUSSION',
+        roundNumber: 1,
+        players: base,
+        nightActions: [
+          { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v1'), nightNumber: 1, submittedAt: 1 },
+          { id: 'a2', actorId: pid('doc1'), actorRole: 'DOCTOR', targetId: pid('v1'), nightNumber: 1, submittedAt: 2 },
+        ],
+      });
+      const savedEntry = redactStateFor(saved, pid('host')).you.moderatorNightView?.history[0];
+      expect(savedEntry).toMatchObject({ saveLanded: true, diedId: undefined, diedName: undefined });
+
+      const missed = buildState({
+        phase: 'DAY_DISCUSSION',
+        roundNumber: 1,
+        players: base,
+        nightActions: [
+          { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v1'), nightNumber: 1, submittedAt: 1 },
+          { id: 'a2', actorId: pid('doc1'), actorRole: 'DOCTOR', targetId: pid('doc1'), nightNumber: 1, submittedAt: 2 },
+        ],
+      });
+      const missedEntry = redactStateFor(missed, pid('host')).you.moderatorNightView?.history[0];
+      expect(missedEntry).toMatchObject({ saveLanded: false, diedName: 'Vic', diedRole: 'VILLAGER' });
+    });
+
+    it('history recap: a repeat doctor protection does not count as a save', () => {
+      const state = buildState({
+        phase: 'DAY_DISCUSSION',
+        roundNumber: 2,
+        players: [
+          { id: 'host', name: 'Host', isHost: true },
+          { id: 'mafia1', name: 'Mara', role: 'MAFIA' },
+          { id: 'doc1', name: 'Dana', role: 'DOCTOR' },
+          { id: 'v1', name: 'Vic', role: 'VILLAGER' },
+        ],
+        nightActions: [
+          { id: 'a0', actorId: pid('doc1'), actorRole: 'DOCTOR', targetId: pid('v1'), nightNumber: 1, submittedAt: 1 },
+          { id: 'a1', actorId: pid('mafia1'), actorRole: 'MAFIA', targetId: pid('v1'), nightNumber: 2, submittedAt: 2 },
+          { id: 'a2', actorId: pid('doc1'), actorRole: 'DOCTOR', targetId: pid('v1'), nightNumber: 2, submittedAt: 3 },
+        ],
+      });
+
+      const history = redactStateFor(state, pid('host')).you.moderatorNightView?.history ?? [];
+      const night2 = history.find((h) => h.nightNumber === 2);
+      expect(night2).toMatchObject({ saveLanded: false, diedName: 'Vic' });
+    });
+
+    it('history recap: detective result carried as detectiveFoundMafia', () => {
+      const state = buildState({
+        phase: 'DAY_DISCUSSION',
+        roundNumber: 1,
+        players: [
+          { id: 'host', name: 'Host', isHost: true },
+          { id: 'mafia1', name: 'Mara', role: 'MAFIA' },
+          { id: 'det1', name: 'Del', role: 'DETECTIVE' },
+        ],
+        nightActions: [
+          { id: 'a1', actorId: pid('det1'), actorRole: 'DETECTIVE', targetId: pid('mafia1'), nightNumber: 1, submittedAt: 1 },
+        ],
+      });
+
+      const entry = redactStateFor(state, pid('host')).you.moderatorNightView?.history[0];
+      expect(entry).toMatchObject({ detectiveTargetName: 'Mara', detectiveFoundMafia: true });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

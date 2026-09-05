@@ -21,7 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from 'react';
-import type { PlayerView } from '@mafia/shared';
+import type { ModeratorNightHistoryEntry, ModeratorNightRoleState, PlayerView } from '@mafia/shared';
 import { ROLE_LABEL } from '@/lib/roleLabels';
 import { useSocket } from '@/lib/socket-context';
 import { useToast } from '@/components/Toast';
@@ -100,12 +100,14 @@ function HostPhaseControlsInner({ view }: HostPhaseControlsProps) {
   // there's anything to resolve/narrate — see NightSubPhaseSchema.
   if (view.phase === 'NIGHT' && view.nightSubPhase && view.nightSubPhase !== 'COMPLETE') {
     const roleLabel = ROLE_LABEL[view.nightSubPhase] ?? view.nightSubPhase;
+    const roleStates = view.you.moderatorNightView?.currentRound?.roles ?? [];
     return (
       <HostCard tone="night" icon="🌙" eyebrow="Moderator · night sequence">
         <p className="text-base font-semibold text-base-content">
           Waiting on the <span className="text-mafia-accent">{roleLabel}</span>
         </p>
         <p className="text-sm text-base-content/60">Once they&apos;ve acted, advance to call on the next role.</p>
+        {roleStates.length > 0 && <ModeratorNightRoster roles={roleStates} />}
         <HostButton onClick={handleAdvanceNightSubPhase} disabled={busy} loading={busy}>
           {NIGHT_SUBPHASE_PROMPT_LABEL[view.nightSubPhase]}
         </HostButton>
@@ -120,8 +122,17 @@ function HostPhaseControlsInner({ view }: HostPhaseControlsProps) {
   // and the only state where the action button reads as a distinct verb
   // ("Reveal") rather than a neutral "advance".
   if (pending) {
+    // The most recent resolved night's recap, shown above the narration
+    // editor when we're revealing a NIGHT — so the moderator can announce
+    // saves/kills/investigations accurately. `history` is oldest-first;
+    // its last entry is the night that just resolved.
+    const nightRecap =
+      pending.forPhase === 'NIGHT'
+        ? view.you.moderatorNightView?.history.at(-1)
+        : undefined;
     return (
       <HostCard tone="reveal" icon="📣" eyebrow="Ready to reveal">
+        {nightRecap && <ModeratorNightRecap entry={nightRecap} />}
         <p className="text-sm text-base-content/70">Edit the wording if you like, then share it with everyone.</p>
         <textarea
           value={draft}
@@ -199,6 +210,106 @@ function HostCard({
         <span className={`text-xs font-semibold uppercase tracking-wide ${eyebrowColor}`}>{eyebrow}</span>
       </div>
       {children}
+    </div>
+  );
+}
+
+/** Live acted-status + target for each acting role this night — the panel
+ * the moderator reads to know whether it's safe to advance. Shows the
+ * actual choice inline (not just a checkmark): the moderator is already a
+ * full spectator, and the reveal recap shows the same detail. */
+function ModeratorNightRoster({ roles }: { roles: ModeratorNightRoleState[] }) {
+  return (
+    <ul className="flex flex-col gap-1 rounded-xl bg-base-content/[0.04] px-3 py-2 text-sm">
+      {roles.map((r) => {
+        const label = ROLE_LABEL[r.role] ?? r.role;
+        if (!r.hasLivingHolder) {
+          return (
+            <li key={r.role} className="flex items-center justify-between gap-2 text-base-content/35">
+              <span>{label}</span>
+              <span className="text-xs">not in play</span>
+            </li>
+          );
+        }
+        const verb = r.role === 'MAFIA' ? 'targeting' : r.role === 'DETECTIVE' ? 'investigating' : 'protecting';
+        return (
+          <li key={r.role} className="flex items-center justify-between gap-2">
+            <span className="text-base-content/70">{label}</span>
+            {r.submitted ? (
+              <span className="text-right text-base-content">
+                <span aria-hidden="true" className="mr-1 text-mafia-accent">
+                  ✓
+                </span>
+                {r.targetName ? (
+                  <>
+                    {verb} <span className="font-semibold">{r.targetName}</span>
+                  </>
+                ) : (
+                  'skipped'
+                )}
+              </span>
+            ) : (
+              <span className="text-xs text-base-content/40">waiting…</span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Structured kill / save / death / investigation recap for one resolved
+ * night — rendered above the narration editor while revealing a NIGHT, and
+ * reused as each row of the moderator's night-history log. */
+export function ModeratorNightRecap({ entry }: { entry: ModeratorNightHistoryEntry }) {
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-base-content/50">{label}</span>
+      <span className="text-right text-base-content">{value}</span>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-1 rounded-xl bg-base-content/[0.04] px-3 py-2.5 text-sm">
+      <Row
+        label="Mafia targeted"
+        value={entry.mafiaTargetName ?? <span className="text-base-content/40">no kill</span>}
+      />
+      {entry.doctorTargetName && (
+        <Row
+          label="Doctor protected"
+          value={
+            <>
+              {entry.doctorTargetName}
+              {entry.saveLanded && <span className="ml-1.5 font-semibold text-mafia-accent">— SAVED</span>}
+            </>
+          }
+        />
+      )}
+      <Row
+        label="Result"
+        value={
+          entry.diedName ? (
+            <span className="font-semibold">
+              {entry.diedName} died{entry.diedRole ? ` (${ROLE_LABEL[entry.diedRole] ?? entry.diedRole})` : ''}
+            </span>
+          ) : (
+            'No one died'
+          )
+        }
+      />
+      {entry.detectiveTargetName && (
+        <Row
+          label="Detective checked"
+          value={
+            <>
+              {entry.detectiveTargetName}
+              <span className="ml-1.5 text-base-content/60">
+                → {entry.detectiveFoundMafia ? 'mafia' : 'not mafia'}
+              </span>
+            </>
+          }
+        />
+      )}
     </div>
   );
 }
